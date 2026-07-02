@@ -1,9 +1,10 @@
 import db from "../config/db.js"
 import validator from "validator"
+import { SAFE_USER_FIELDS } from "../constants.js"; 
 
 export const getAllUsers = async (req,res) => {
     const result = await db.query(
-        `SELECT * from users;`
+        `SELECT ${SAFE_USER_FIELDS} from users;`
     );
     res.status(200).json(result.rows)
 };
@@ -11,7 +12,7 @@ export const getAllUsers = async (req,res) => {
 export const getUser = async (req,res) => {
     const user_id = req.params.id
     const result = await db.query(
-        `SELECT * FROM users WHERE user_id = $1`,
+        `SELECT ${SAFE_USER_FIELDS}  FROM users WHERE user_id = $1`,
         [user_id]
     );
     if(result.rowCount == 0)
@@ -81,7 +82,7 @@ export const removeUser = async (req,res) => {
     const {id} = req.params;
 
     const result = await db.query(
-        `DELETE FROM users WHERE user_id = $1 RETURNING *`,
+        `DELETE FROM users WHERE user_id = $1 RETURNING ${SAFE_USER_FIELDS} }`,
         [id]
     )
 
