@@ -1,7 +1,9 @@
 import express from "express"
-import {testDatabase} from "../controllers/quizController.js"
+import {getUser,createUser} from "../controllers/userController.js"
+import asyncHandler from "../utils/asyncHandler.js";
 const router = express.Router();
 
-router.get('/',testDatabase );
+router.get('/:id', asyncHandler(getUser) );
+router.post('/login',asyncHandler(createUser));
 
 export default router;
