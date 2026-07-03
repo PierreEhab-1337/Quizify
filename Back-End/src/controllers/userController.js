@@ -11,6 +11,10 @@ export const getAllUsers = async (req,res) => {
 
 export const getUser = async (req,res) => {
     const user_id = req.params.id
+
+    if(req.user.userId !== user_id && req.user.role !== "admin")
+        return res.status(403).json({message: "You can only retrieve your account"});
+
     const result = await db.query(
         `SELECT ${SAFE_USER_FIELDS}  FROM users WHERE user_id = $1`,
         [user_id]
@@ -30,7 +34,7 @@ export const createUser = async(req,res)=>{
         return res.status(400).json({message: "Invalid Email!"});
 
     const result = await db.query(
-        `INSERT INTO users (username,email,password_hash) VALUES($1,$2,$3) RETURNING user_id, username, email`,
+        `INSERT INTO users (username,email,password_hash) VALUES($1,$2,$3) RETURNING user_id, username, email, role`,
         [username,email,password_hash]
     )
 
@@ -57,7 +61,7 @@ export const updateUser = async (req,res) =>{
 
     if(email !== undefined){
         if(typeof email !== "string" || email.trim().length === 0)
-            return res.status(400).json({ message: "email must be non-empty" });
+            return res.status(400).json({ message: "email must be non-empty string" });
         if(!validator.isEmail(email))
             return res.status(400).json({message: "Invalid Email!"});
         values.push(email);
@@ -65,9 +69,12 @@ export const updateUser = async (req,res) =>{
     }
 
     values.push(id);
+
+    if(req.user.userId !== id && req.user.role !== "admin")
+        return res.status(403).json({message: "You can only update your account"});
     
     const result = await db.query(
-        `UPDATE users SET ${updates.join(", ")} WHERE user_id = $${values.length} RETURNING user_id,username,email`,
+        `UPDATE users SET ${updates.join(", ")} WHERE user_id = $${values.length} RETURNING user_id,username,email,role`,
         values
     );
 
@@ -82,7 +89,7 @@ export const removeUser = async (req,res) => {
     const {id} = req.params;
 
     const result = await db.query(
-        `DELETE FROM users WHERE user_id = $1 RETURNING ${SAFE_USER_FIELDS} }`,
+        `DELETE FROM users WHERE user_id = $1 RETURNING ${SAFE_USER_FIELDS}`,
         [id]
     )
 

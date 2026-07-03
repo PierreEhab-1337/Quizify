@@ -1,1 +1,1 @@
-export const SAFE_USER_FIELDS = "user_id, username, email, created_at";
+export const SAFE_USER_FIELDS = "user_id, username, email, role, created_at";
