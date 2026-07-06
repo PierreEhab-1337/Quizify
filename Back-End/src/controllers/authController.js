@@ -8,13 +8,28 @@ export const registerUser = async (req,res) => {
     const {username, email, password} = req.body; 
 
     if(username === undefined || email === undefined || password === undefined)
-        return res.status(400).json({message: "Fill missing fields!"});
+        return res.status(400).json({
+            success : false,
+            message: "Fill missing fields!"
+        });
+
     if(typeof username !== "string" || typeof email !== "string" || typeof password !== "string" || !username.trim() || !email.trim() || !password.trim())
-        return res.status(400).json({message: "Must be non-empty string"});
+        return res.status(400).json({
+            success : false,
+            message: "Must be non-empty string"
+        });
+
     if(!validator.isEmail(email))
-        return res.status(400).json({message:"Enter a valid email!"});
+        return res.status(400).json({
+            success : false,
+            message:"Enter a valid email!"
+        });
+
     if(password.length < 8)
-        return res.status(400).json({message: "Password must be at least 8 characters"});
+        return res.status(400).json({
+            success : false,
+            message: "Password must be at least 8 characters"
+        });
 
     const password_hash = await bcrypt.hash(password, 10);
 
@@ -24,8 +39,9 @@ export const registerUser = async (req,res) => {
     )
 
     res.status(201).json({
+        success : true,
         message : "Registered Successfully",
-        user : result.rows[0]
+        data : result.rows[0]
     });
 }
 
@@ -33,13 +49,28 @@ export const loginUser = async (req,res) => {
     const {email, password} = req.body; 
 
     if(email === undefined || password === undefined)
-        return res.status(400).json({message: "Fill missing fields!"});
+        return res.status(400).json({
+            success : false,
+            message: "Fill missing fields!"
+        });
+
     if(typeof email !== "string" || typeof password !== "string" || !email.trim() || !password.trim())
-        return res.status(400).json({message: "Must be non-empty string"});
+        return res.status(400).json({
+            success : false,
+            message: "Must be non-empty string"
+        });
+
     if(!validator.isEmail(email))
-        return res.status(400).json({message:"Enter a valid email!"});
+        return res.status(400).json({
+            success : false,
+            message:"Enter a valid email!"
+        });
+
     if(password.length < 8)
-        return res.status(400).json({message: "Password must be at least 8 characters"});
+        return res.status(400).json({
+            success : false,
+            message: "Password must be at least 8 characters"
+        });
 
     const result = await db.query(
         `SELECT * FROM users WHERE email = $1`,
@@ -47,13 +78,19 @@ export const loginUser = async (req,res) => {
     );
 
     if(result.rowCount === 0)
-        return res.status(401).json({message:"Wrong Email or Password"});
+        return res.status(401).json({
+            success : false,
+            message:"Wrong Email or Password"
+        });
 
     const user = result.rows[0]
     const isCorrectPassword = await bcrypt.compare(password, user.password_hash);
 
     if(!isCorrectPassword)
-        return res.status(401).json({message:"Wrong Email or Password"});
+        return res.status(401).json({
+            success : false,
+            message:"Wrong Email or Password"
+        });
 
     const token = JWT.sign(
         {
@@ -68,9 +105,10 @@ export const loginUser = async (req,res) => {
     );
 
     res.status(200).json({
-        message:"Logged in succefully!",
+        success : true,
+        message: "Logged in succefully!",
         token : token,
-        user : {
+        data : {
             user_id : user.user_id,
             username : user.username,
             email : user.email,

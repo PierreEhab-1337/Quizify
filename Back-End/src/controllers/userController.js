@@ -6,64 +6,80 @@ export const getAllUsers = async (req,res) => {
     const result = await db.query(
         `SELECT ${SAFE_USER_FIELDS} from users;`
     );
-    res.status(200).json(result.rows)
+    res.status(200).json({
+        success : true,
+        message : "Users Retrieved Successfully",
+        data : result.rows
+    });
 };
 
 export const getUser = async (req,res) => {
-    const user_id = req.params.id
+    const user_id = req.user.userId;
 
     if(req.user.userId !== user_id && req.user.role !== "admin")
-        return res.status(403).json({message: "You can only retrieve your account"});
+        return res.status(403).json({
+            success : false,
+            message: "You can only retrieve your account"
+    });
 
     const result = await db.query(
         `SELECT ${SAFE_USER_FIELDS}  FROM users WHERE user_id = $1`,
         [user_id]
     );
     if(result.rowCount == 0)
-        res.status(404).json({message: "User Not Found"})
-    res.status(200).json(result.rows[0])
-}
+        return res.status(404).json({
+            success : false,
+            message: "User Not Found"
+        })
 
-export const createUser = async(req,res)=>{
-    const {username, email, password_hash} = req.body;
-
-    if(!username || !email || !password_hash)
-        return res.status(400).json({message: "Fill missing fields!"});
-
-    if(!validator.isEmail(email))
-        return res.status(400).json({message: "Invalid Email!"});
-
-    const result = await db.query(
-        `INSERT INTO users (username,email,password_hash) VALUES($1,$2,$3) RETURNING user_id, username, email, role`,
-        [username,email,password_hash]
-    )
-
-    res.status(201).json(result.rows[0])
+    res.status(200).json({
+        success : true,
+        message : "User Retrieved Successfully",
+        data : result.rows[0]
+    });
 }
 
 export const updateUser = async (req,res) =>{
-    const {id} = req.params;
+    let id;
+    
+    if(req.params.id)
+        id = req.params.id;
+    else
+        id = req.user.userId;
+
     const {username, email} = req.body;
 
     const updates = [];
     const values = [];
 
-    if(username === undefined && email === undefined )
-        return res.status(400).json({message : "Fill missing fields!"});
+    if(username === undefined && email === undefined ) // Executes when all imputs are empty only
+        return res.status(400).json({
+            success : false,
+            message: "Fill missing fields!"
+        });
 
     if (username !== undefined) {
-        if (typeof username !== "string" || username.trim().length === 0) {
-            return res.status(400).json({ message: "username must be a non-empty string" });
+        if (typeof username !== "string" || !username.trim()) {
+            return res.status(400).json({
+            success : false,
+            message: "Username must be a non-empty string"
+        });
         }
         values.push(username);
         updates.push(`username = $${values.length} `);
     }
 
     if(email !== undefined){
-        if(typeof email !== "string" || email.trim().length === 0)
-            return res.status(400).json({ message: "email must be non-empty string" });
+        if(typeof email !== "string" || !email.trim())
+             return res.status(400).json({
+            success : false,
+            message: "Email must be a non-empty string"
+        });
         if(!validator.isEmail(email))
-            return res.status(400).json({message: "Invalid Email!"});
+            return res.status(400).json({
+                success : false,
+                message: "Invalid Email!"
+            });
         values.push(email);
         updates.push(`email = $${values.length}`);
     }
@@ -71,7 +87,10 @@ export const updateUser = async (req,res) =>{
     values.push(id);
 
     if(req.user.userId !== id && req.user.role !== "admin")
-        return res.status(403).json({message: "You can only update your account"});
+        return res.status(403).json({
+            success : false,
+            message: "You can only update your account"
+        });
     
     const result = await db.query(
         `UPDATE users SET ${updates.join(", ")} WHERE user_id = $${values.length} RETURNING user_id,username,email,role`,
@@ -79,9 +98,16 @@ export const updateUser = async (req,res) =>{
     );
 
     if(result.rowCount === 0)
-        return res.status(404).json({message: "User Not Found"});
+        return res.status(404).json({
+            success : false,
+            message: "User Not Found"
+        });
 
-    res.status(200).json(result.rows[0])
+    res.status(200).json({
+        success : true,
+        message : "User Updated Successfully",
+        data : result.rows[0]
+    });
 
 }
 
@@ -94,6 +120,13 @@ export const removeUser = async (req,res) => {
     )
 
     if(result.rowCount == 0)
-        return res.status(404).json({message: "User Not Found"});
-    res.status(200).json(result.rows[0])
+        return res.status(404).json({
+            success : false,
+            message: "User Not Found"});
+
+    res.status(200).json({
+        success : true,
+        message : "User Removed Successfully",
+        data : result.rows[0]
+    });
 }
