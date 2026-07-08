@@ -1,10 +1,12 @@
 import express from "express"
+import cors from "cors"
 import userRoute from "./routes/userRoute.js"
 import authRoute from "./routes/authRoute.js"
 import questionRoute from "./routes/questionRoute.js"
 import errorHandler from "./middleware/errorHandler.js"
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 app.use("/users",userRoute);
 app.use("/auth", authRoute);

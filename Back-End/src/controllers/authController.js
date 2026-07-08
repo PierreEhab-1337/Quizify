@@ -31,11 +31,11 @@ export const registerUser = async (req,res) => {
             message: "Password must be at least 8 characters"
         });
 
-    const password_hash = await bcrypt.hash(password, 10);
+    // const password_hash = await bcrypt.hash(password, 10);
 
     const result = await db.query(
         `INSERT INTO users (username,email,password_hash) VALUES ($1,$2,$3) RETURNING ${SAFE_USER_FIELDS} `,
-        [username, email, password_hash]
+        [username, email, password]
     )
 
     res.status(201).json({
@@ -84,9 +84,9 @@ export const loginUser = async (req,res) => {
         });
 
     const user = result.rows[0]
-    const isCorrectPassword = await bcrypt.compare(password, user.password_hash);
+    // const isCorrectPassword = await bcrypt.compare(password, user.password_hash);
 
-    if(!isCorrectPassword)
+    if(!(user.password_hash === password))
         return res.status(401).json({
             success : false,
             message:"Wrong Email or Password"

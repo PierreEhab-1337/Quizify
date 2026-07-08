@@ -1,116 +1,75 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { getQuestionById } from "../services/questionService";
 
-// ════════════════════════════════════════════════════════════
-// بيانات تجريبية لأنواع الأسئلة الأربعة
-// النوع 1: نص + اختيارات
-// النوع 2: نص فقط بدون اختيارات (Done)
-// النوع 3: نص + صور + اختيارات
-// النوع 4: نص + صور بدون اختيارات (Done)
-// ════════════════════════════════════════════════════════════
-const SAMPLE_QUESTIONS = {
-  type1: {
-    id: 1,
-    type: "withOptions",
-    text: "ما هو أطول نهر فى قارة أفريقيا؟",
-    images: [],
-    options: [
-      { id: "a", text: "نهر النيل", correct: true },
-      { id: "b", text: "نهر الكونغو", correct: false },
-      { id: "c", text: "نهر النيجر", correct: false },
-      { id: "d", text: "نهر زامبيزى", correct: false },
-    ],
-    timer: 20,
-  },
-  type2: {
-    id: 2,
-    type: "withoutOptions",
-    text: "اذكر اسم القديس المعروف بلقب صاحب العمود، ومن أين كان أصله؟",
-    images: [],
-    answerImage: null,
-    timer: 25,
-  },
-  type3: {
-    id: 3,
-    type: "withOptions",
-    text: "حدد اسم هذا المعلم السياحى من الصور الموضحة",
-    images: ["img1", "img2"],
-    options: [
-      { id: "a", text: "أبو الهول", correct: false },
-      { id: "b", text: "معبد أبو سمبل", correct: true },
-      { id: "c", text: "معبد الكرنك", correct: false },
-    ],
-    timer: 30,
-  },
-  type4: {
-    id: 4,
-    type: "withoutOptions",
-    text: "تأمل الصور التالية، ثم حدد العنصر المشترك بينها",
-    images: ["img1", "img2", "img3"],
-    answerImage: "answerImg",
-    timer: null,
-  },
-};
+// يحوّل نوع السؤال فى الباك اند (singleChoice/multiChoice/openEnded)
+// لنفس التصنيف اللى التصميم مبنى عليه (withOptions/withoutOptions)
+function mapQuestionType(question_type) {
+  if (question_type === "openEnded") return "withoutOptions";
+  return "withOptions"; // singleChoice / multiChoice
+}
 
-export default function QuestionPlayPage() {
-  // غيّر هذه القيمة لمعاينة كل نوع: type1 / type2 / type3 / type4
-  const [activeSample, setActiveSample] = useState("type1");
-  const question = SAMPLE_QUESTIONS[activeSample];
-
-  const [selectedOptionId, setSelectedOptionId] = useState(null);
+export default function QuestionPlayPage({ questionId, onBack }) {
+  const [question, setQuestion] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [doneRevealed, setDoneRevealed] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(question.timer);
-  const [timeUp, setTimeUp] = useState(false);
   const [zoomedImage, setZoomedImage] = useState(null);
-  const intervalRef = useRef(null);
 
-  const hasAnswered = selectedOptionId !== null || doneRevealed;
-
-  // ── إعادة تهيئة الحالة عند تبديل السؤال التجريبى ──────────
   useEffect(() => {
-    setSelectedOptionId(null);
+    if (!questionId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
     setDoneRevealed(false);
-    setTimeUp(false);
-    setTimeLeft(question.timer);
-  }, [activeSample, question.timer]);
+    getQuestionById(questionId)
+      .then((data) => {
+        if (!cancelled) setQuestion(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err.response?.data?.message || "تعذّر تحميل السؤال من السيرفر"
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [questionId]);
 
-  // ── المؤقت ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (question.timer == null || hasAnswered || timeUp) return;
-    if (timeLeft <= 0) {
-      setTimeUp(true);
-      playSound("timeUp");
-      return;
-    }
-    intervalRef.current = setTimeout(() => setTimeLeft((t) => t - 1), 1000);
-    return () => clearTimeout(intervalRef.current);
-  }, [timeLeft, hasAnswered, timeUp, question.timer]);
+  const handleBack = () => onBack?.();
 
-  // ── أصوات (Placeholder — سيتم استبدالها بملفات صوت فعلية) ──
-  const playSound = useCallback((name) => {
-    console.log("play sound →", name);
-  }, []);
+  if (loading) {
+    return (
+      <div style={S.root}>
+        <div style={S.centerMsg}>جارِ تحميل السؤال...</div>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    playSound("open");
-  }, [activeSample, playSound]);
+  if (error || !question) {
+    return (
+      <div style={S.root}>
+        <div style={{ ...S.centerMsg, color: "#E07878" }}>
+          {error || "لم يتم اختيار سؤال"}
+        </div>
+        <div style={S.backBar}>
+          <button style={S.backBtn} onClick={handleBack}>
+            العودة إلى لوحة الأسئلة
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  // ── اختيار إجابة ───────────────────────────────────────────
-  const handleSelectOption = (opt) => {
-    if (hasAnswered) return;
-    setSelectedOptionId(opt.id);
-    playSound("answerSelected");
-  };
-
-  const handleDone = () => {
-    if (doneRevealed) return;
-    setDoneRevealed(true);
-    playSound("answerSelected");
-  };
-
-  const handleBack = () => {
-    playSound("back");
-    console.log("navigate → /competitions/play/grid");
-  };
+  const type = mapQuestionType(question.question_type);
+  const images = question.images
+    ? question.images.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const tags = question.tags
+    ? question.tags.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
 
   return (
     <>
@@ -122,46 +81,28 @@ export default function QuestionPlayPage() {
         <div style={S.dots} />
         <div style={S.glow} />
 
-        {/* ── مبدّل المعاينة (أداة تطوير فقط — تُحذف عند الربط الفعلى) ── */}
-        <div style={S.devSwitcher}>
-          {Object.keys(SAMPLE_QUESTIONS).map((key) => (
-            <button
-              key={key}
-              style={{
-                ...S.devSwitchBtn,
-                ...(activeSample === key ? S.devSwitchBtnActive : {}),
-              }}
-              onClick={() => setActiveSample(key)}
-            >
-              {key}
-            </button>
-          ))}
-        </div>
-
-        {/* ── المؤقت الثابت ── */}
-        {question.timer != null && (
-          <div style={{ ...S.timerBadge, borderColor: timeUp ? "#D24646" : "#F5C840" }}>
-            <span style={{ ...S.timerNum, color: timeUp ? "#E07878" : "#F5C840" }}>
-              {timeUp ? "0" : timeLeft}
-            </span>
-            <span style={S.timerLabel}>ثانية</span>
-          </div>
-        )}
-
         <main style={S.main}>
-          {/* ── برواز السؤال (نص + صور) ── */}
           <div style={S.questionFrame}>
             <div style={S.questionTextBox}>
-              <p style={S.questionText}>{question.text}</p>
+              <p style={S.questionText}>{question.description}</p>
             </div>
 
-            {question.images.length > 0 && (
+            {tags.length > 0 && (
+              <div style={S.tagsRow}>
+                {tags.map((tag, i) => (
+                  <span key={i} style={S.tagChip}>{tag}</span>
+                ))}
+              </div>
+            )}
+
+            {images.length > 0 && (
               <div style={S.imagesRow}>
-                {question.images.map((img, i) => (
+                {images.map((img, i) => (
                   <div
                     key={i}
                     style={S.imageThumb}
                     onClick={() => setZoomedImage(img)}
+                    title={img}
                   >
                     صورة {i + 1}
                   </div>
@@ -170,106 +111,48 @@ export default function QuestionPlayPage() {
             )}
           </div>
 
-          {/* ── زر ANSWER الفاصل ── */}
-          {question.type === "withOptions" && (
-            <div style={S.answerDivider}>
-              <button style={S.answerDividerBtn} disabled>
-                <span style={S.answerDividerArrow}>&#9658;</span>
-                ANSWER
-              </button>
+          {/* ⚠️ الباك اند لسه معندوش تخزين للاختيارات ولا الإجابة الصحيحة
+              (جدول question مفيهوش options/answer)، فبنعرض تنبيه بدل
+              ما نختلق اختيارات وهمية */}
+          {type === "withOptions" && (
+            <div style={S.pendingBox}>
+              هذا السؤال من نوع اختيارات، لكن الباك اند لسه مفيهوش تخزين
+              للاختيارات ولا الإجابة الصحيحة — هيظهر هنا لما الـ endpoint يتضاف.
             </div>
           )}
 
-          {/* ── النوع الاختيارى ── */}
-          {question.type === "withOptions" && (
-            <div style={S.optionsGrid}>
-              {question.options.map((opt) => {
-                const isSelected = selectedOptionId === opt.id;
-                const showResult = hasAnswered;
-                let bg = "#162E58";
-                let border = "#2E5FA8";
-                let textColor = "#FFFFFF";
-
-                if (showResult && opt.correct) {
-                  bg = "rgba(76,175,130,0.18)";
-                  border = "#4CAF82";
-                  textColor = "#9FE1CB";
-                } else if (showResult && isSelected && !opt.correct) {
-                  bg = "rgba(210,70,70,0.18)";
-                  border = "#D24646";
-                  textColor = "#F09595";
-                } else if (showResult) {
-                  border = "rgba(255,255,255,0.08)";
-                }
-
-                return (
-                  <button
-                    key={opt.id}
-                    style={{
-                      ...S.optionCard,
-                      background: bg,
-                      borderColor: border,
-                      color: textColor,
-                      cursor: hasAnswered ? "default" : "pointer",
-                    }}
-                    onClick={() => handleSelectOption(opt)}
-                    disabled={hasAnswered}
-                  >
-                    {opt.text}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ── النوع غير الاختيارى ── */}
-          {question.type === "withoutOptions" && !doneRevealed && (
+          {type === "withoutOptions" && !doneRevealed && (
             <div style={S.doneRow}>
-              <button style={S.doneBtn} onClick={handleDone}>
+              <button style={S.doneBtn} onClick={() => setDoneRevealed(true)}>
                 Done — إظهار الإجابة
               </button>
             </div>
           )}
 
-          {question.type === "withoutOptions" && doneRevealed && (
-            <div style={S.answerRevealBox}>
-              {question.answerImage ? (
-                <div style={S.imageThumb}>صورة الإجابة</div>
-              ) : (
-                <div style={S.defaultDoneImage}>Done</div>
-              )}
+          {type === "withoutOptions" && doneRevealed && (
+            <div style={S.pendingBox}>
+              الباك اند لسه معندوش حقل مخصص لتخزين نص/صورة الإجابة الصحيحة
+              لهذا النوع من الأسئلة.
             </div>
-          )}
-
-          {/* ── تنبيه انتهاء الوقت (بدون إغلاق السؤال) ── */}
-          {timeUp && !hasAnswered && (
-            <div style={S.timeUpNotice}>انتهى الوقت المحدد لهذا السؤال</div>
           )}
         </main>
 
-        {/* ── زر العودة — يظهر فقط بعد الإجابة ── */}
-        {hasAnswered && (
-          <div style={S.backBar}>
-            <button style={S.backBtn} onClick={handleBack}>
-              العودة إلى لوحة الأسئلة
-            </button>
-          </div>
-        )}
+        <div style={S.backBar}>
+          <button style={S.backBtn} onClick={handleBack}>
+            العودة إلى لوحة الأسئلة
+          </button>
+        </div>
       </div>
 
-      {/* ── تكبير الصورة ── */}
       {zoomedImage && (
         <div style={S.zoomOverlay} onClick={() => setZoomedImage(null)}>
-          <div style={S.zoomBox}>صورة مكبّرة</div>
+          <div style={S.zoomBox}>{zoomedImage}</div>
         </div>
       )}
     </>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// الستايلز
-// ════════════════════════════════════════════════════════════
 const S = {
   root: {
     minHeight: "100vh",
@@ -280,6 +163,12 @@ const S = {
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
+  },
+  centerMsg: {
+    margin: "auto",
+    color: "#A8C4E8",
+    fontSize: "20px",
+    fontWeight: 700,
   },
   dots: {
     position: "fixed",
@@ -298,56 +187,6 @@ const S = {
     height: "700px",
     background: "radial-gradient(ellipse, rgba(245,200,64,0.06) 0%, transparent 65%)",
     pointerEvents: "none",
-  },
-
-  // مبدّل المعاينة (Dev only)
-  devSwitcher: {
-    position: "fixed",
-    top: "12px",
-    insetInlineStart: "12px",
-    display: "flex",
-    gap: "6px",
-    zIndex: 300,
-  },
-  devSwitchBtn: {
-    background: "rgba(0,0,0,0.4)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    borderRadius: "5px",
-    padding: "4px 9px",
-    color: "rgba(255,255,255,0.5)",
-    fontSize: "11px",
-    cursor: "pointer",
-    fontFamily: "monospace",
-  },
-  devSwitchBtnActive: {
-    borderColor: "#F5C840",
-    color: "#F5C840",
-  },
-
-  // المؤقت
-  timerBadge: {
-    position: "fixed",
-    top: "24px",
-    insetInlineEnd: "24px",
-    background: "rgba(15,32,64,0.9)",
-    border: "2px solid",
-    borderRadius: "14px",
-    padding: "10px 18px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    zIndex: 250,
-    minWidth: "64px",
-  },
-  timerNum: {
-    fontSize: "26px",
-    fontWeight: 900,
-    lineHeight: 1,
-  },
-  timerLabel: {
-    fontSize: "10px",
-    color: "#A8C4E8",
-    marginTop: "2px",
   },
 
   main: {
@@ -386,7 +225,23 @@ const S = {
     margin: 0,
   },
 
-  // الصور
+  tagsRow: {
+    display: "flex",
+    gap: "8px",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    marginTop: "18px",
+  },
+  tagChip: {
+    background: "rgba(26,42,0,0.15)",
+    border: "1px solid rgba(26,42,0,0.3)",
+    borderRadius: "999px",
+    padding: "4px 14px",
+    color: "#1A2A00",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+
   imagesRow: {
     display: "flex",
     gap: "16px",
@@ -410,56 +265,19 @@ const S = {
     flexShrink: 0,
   },
 
-  // الاختيارات
-  optionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "16px",
-    width: "100%",
-  },
-  optionCard: {
-    border: "3px solid #2E5FA8",
+  pendingBox: {
+    background: "rgba(245,200,64,0.08)",
+    border: "1.5px solid rgba(245,200,64,0.3)",
     borderRadius: "14px",
-    padding: "22px 28px",
-    fontSize: "clamp(16px, 2.2vw, 22px)",
-    fontWeight: 800,
-    fontFamily: "'Cairo', sans-serif",
-    textAlign: "center",
-    background: "#162E58",
-    color: "#FFFFFF",
-    boxShadow: "0 4px 0 #0A1A38",
-    transition: "background 0.25s, border-color 0.25s",
-  },
-
-  // زر ANSWER الفاصل
-  answerDivider: {
-    display: "flex",
-    justifyContent: "center",
-    marginBottom: "20px",
-    marginTop: "-8px",
-  },
-  answerDividerBtn: {
-    background: "linear-gradient(135deg, #1A4F9C, #2460B8)",
-    border: "2px solid #3A72CC",
-    borderRadius: "8px",
-    padding: "10px 28px",
-    color: "#FFFFFF",
-    fontSize: "13px",
-    fontWeight: 900,
-    fontFamily: "'Cairo', sans-serif",
-    letterSpacing: "2px",
-    cursor: "default",
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    boxShadow: "0 3px 0 #0F2A60",
-  },
-  answerDividerArrow: {
+    padding: "20px 26px",
     color: "#F5C840",
-    fontSize: "12px",
+    fontSize: "14px",
+    fontWeight: 600,
+    lineHeight: 1.8,
+    textAlign: "center",
+    maxWidth: "560px",
   },
 
-  // Done
   doneRow: {
     display: "flex",
     justifyContent: "center",
@@ -476,34 +294,7 @@ const S = {
     cursor: "pointer",
     boxShadow: "0 6px 24px rgba(232,160,32,0.35)",
   },
-  answerRevealBox: {
-    display: "flex",
-    justifyContent: "center",
-  },
-  defaultDoneImage: {
-    width: "220px",
-    height: "160px",
-    background: "rgba(245,200,64,0.1)",
-    border: "2px solid #F5C840",
-    borderRadius: "14px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#F5C840",
-    fontSize: "24px",
-    fontWeight: 900,
-    fontFamily: "'Lemonada', cursive",
-  },
 
-  timeUpNotice: {
-    marginTop: "28px",
-    color: "#E07878",
-    fontSize: "14px",
-    fontWeight: 700,
-    textAlign: "center",
-  },
-
-  // شريط العودة
   backBar: {
     position: "fixed",
     bottom: "32px",
@@ -526,7 +317,6 @@ const S = {
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
   },
 
-  // تكبير الصورة
   zoomOverlay: {
     position: "fixed",
     inset: 0,
@@ -548,5 +338,8 @@ const S = {
     justifyContent: "center",
     color: "#5A80A8",
     fontSize: "14px",
+    padding: "16px",
+    textAlign: "center",
+    wordBreak: "break-all",
   },
 };

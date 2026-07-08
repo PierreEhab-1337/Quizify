@@ -1,22 +1,29 @@
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
-  const [username, setUsername] = useState("");
+  const { login, loading } = useAuth();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [focus, setFocus] = useState(null);
 
-  const handleLogin = () => {
-    if (!username.trim() || !password.trim()) {
-      setError("يرجى إدخال اسم المستخدم وكلمة المرور");
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      setError("يرجى إدخال البريد الإلكتروني وكلمة المرور");
       return;
     }
     setError("");
-    setLoading(true);
-    // Firebase auth goes here
-    setTimeout(() => setLoading(false), 1000);
+    try {
+      // الباك اند يتحقق من البيانات ويرجّع الـ JWT، AuthContext بيخزنه
+      // وبعدها App.jsx بيتحول تلقائياً للصفحة الرئيسية لأن الـ user بقى موجود
+      await login(email.trim(), password);
+    } catch (err) {
+      const message =
+        err.response?.data?.message || "حصل خطأ فى الاتصال بالسيرفر، حاول تانى";
+      setError(message);
+    }
   };
 
   return (
@@ -43,20 +50,20 @@ export default function LoginPage() {
           <div style={S.formCard}>
             <p style={S.subtitle}>سجّل دخولك للمتابعة</p>
 
-            {/* Username */}
+            {/* Email */}
             <div style={S.fieldGroup}>
               <label style={{
                 ...S.label,
                 color: focus === "u" ? "#F5C840" : "#A8C4E8",
               }}>
-                اسم المستخدم
+                البريد الإلكتروني
               </label>
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                placeholder="أدخل اسم المستخدم"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="أدخل بريدك الإلكتروني"
                 style={{
                   ...S.input,
                   borderColor: focus === "u" ? "#F5C840" : "#2E5FA8",

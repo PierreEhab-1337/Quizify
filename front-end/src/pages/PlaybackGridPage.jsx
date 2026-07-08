@@ -1,46 +1,62 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { getAllQuestions } from "../services/questionService";
 
-// ════════════════════════════════════════════════════════════
-// بيانات تجريبية — مسابقة بها 12 سؤال بعد الـ Shuffle
-// ════════════════════════════════════════════════════════════
-const COMPETITION_NAME = "اجتماع الجمعة";
-
-const QUESTIONS_AFTER_SHUFFLE = [
-  { id: 1, categoryColor: "#E8A020" },
-  { id: 2, categoryColor: "#4CAF82" },
-  { id: 3, categoryColor: "#378ADD" },
-  { id: 4, categoryColor: "#D4537E" },
-  { id: 5, categoryColor: "#7F77DD" },
-  { id: 6, categoryColor: "#1D9E75" },
-  { id: 7, categoryColor: "#D85A30" },
-  { id: 8, categoryColor: "#5DCAA5" },
-  { id: 9, categoryColor: "#E8A020" },
-  { id: 10, categoryColor: "#378ADD" },
-  { id: 11, categoryColor: "#4CAF82" },
-  { id: 12, categoryColor: "#D4537E" },
+// ألوان بتتوزع على الأسئلة بالدور (بما إن الباك اند لسه معندوش تصنيفات/ألوان حقيقية)
+const TILE_COLORS = [
+  "#E8A020", "#4CAF82", "#378ADD", "#D4537E",
+  "#7F77DD", "#1D9E75", "#D85A30", "#5DCAA5",
 ];
 
+const COMPETITION_NAME = "بنك الأسئلة";
+
 // ── حساب أبعاد الشبكة بناءً على عدد الأسئلة ──────────────────
-// يعطى أقرب عدد أعمدة لتكوين شكل متوازن، مع السماح بصف أخير غير مكتمل
 function computeGridColumns(count) {
-  if (count <= 4) return count;
+  if (count <= 4) return count || 1;
   const sqrt = Math.sqrt(count);
   return Math.ceil(sqrt);
 }
 
-export default function PlaybackGridPage() {
+export default function PlaybackGridPage({ onPlayQuestion }) {
+  const [questions, setQuestions] = useState([]);
   const [answeredIds, setAnsweredIds] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    getAllQuestions()
+      .then((data) => {
+        if (cancelled) return;
+        const withColors = data.map((q, i) => ({
+          ...q,
+          categoryColor: TILE_COLORS[i % TILE_COLORS.length],
+        }));
+        setQuestions(withColors);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(
+          err.response?.data?.message || "تعذّر تحميل الأسئلة من السيرفر"
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const remainingQuestions = useMemo(
-    () => QUESTIONS_AFTER_SHUFFLE.filter((q) => !answeredIds.has(q.id)),
-    [answeredIds]
+    () => questions.filter((q) => !answeredIds.has(q.question_id)),
+    [questions, answeredIds]
   );
 
-  const columns = computeGridColumns(remainingQuestions.length || 1);
+  const columns = computeGridColumns(remainingQuestions.length);
 
-  // ── دالة فتح سؤال (Placeholder) ───────────────────────────
   const openQuestion = (q) => {
-    console.log("navigate → /competitions/play/question", { questionId: q.id });
+    setAnsweredIds((prev) => new Set(prev).add(q.question_id));
+    onPlayQuestion?.(q.question_id);
   };
 
   return (
@@ -53,18 +69,28 @@ export default function PlaybackGridPage() {
         <div style={S.dots} />
         <div style={S.glow} />
 
-        {/* ── شريط علوى بسيط: اسم المسابقة فقط ── */}
         <header style={S.header}>
           <div style={S.headerInner}>
             <span style={S.competitionName}>{COMPETITION_NAME}</span>
           </div>
         </header>
 
-        {/* ── شبكة الأسئلة ── */}
         <main style={S.main}>
-          {remainingQuestions.length === 0 ? (
-            <div style={S.allDoneText}>تم الانتهاء من جميع الأسئلة</div>
-          ) : (
+          {loading && <div style={S.allDoneText}>جارِ تحميل الأسئلة...</div>}
+
+          {!loading && error && (
+            <div style={{ ...S.allDoneText, color: "#E07878" }}>{error}</div>
+          )}
+
+          {!loading && !error && remainingQuestions.length === 0 && (
+            <div style={S.allDoneText}>
+              {questions.length === 0
+                ? "لا توجد أسئلة فى بنك الأسئلة حالياً"
+                : "تم الانتهاء من جميع الأسئلة"}
+            </div>
+          )}
+
+          {!loading && !error && remainingQuestions.length > 0 && (
             <div
               style={{
                 ...S.grid,
@@ -72,7 +98,7 @@ export default function PlaybackGridPage() {
               }}
             >
               {remainingQuestions.map((q) => (
-                <QuestionTile key={q.id} question={q} onOpen={openQuestion} />
+                <QuestionTile key={q.question_id} question={q} onOpen={openQuestion} />
               ))}
             </div>
           )}
@@ -82,9 +108,6 @@ export default function PlaybackGridPage() {
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// بطاقة رقم السؤال — تصميم مميز وليس مربعاً تقليدياً
-// ════════════════════════════════════════════════════════════
 function QuestionTile({ question, onOpen }) {
   const [hover, setHover] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -113,16 +136,14 @@ function QuestionTile({ question, onOpen }) {
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       onClick={() => onOpen(question)}
+      title={question.description}
     >
       <div style={{ ...S.tileAccent, background: question.categoryColor }} />
-      <span style={S.tileNumber}>{question.id}</span>
+      <span style={S.tileNumber}>{question.question_id}</span>
     </button>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// الستايلز — أكثر جرأة وبروزاً من باقى الصفحات (شاشة عرض جماهيري)
-// ════════════════════════════════════════════════════════════
 const S = {
   root: {
     minHeight: "100vh",
