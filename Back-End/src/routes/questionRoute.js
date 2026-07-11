@@ -13,4 +13,5 @@ router.get('/:id', authMiddleware, asyncHandler(getQuestion));
 router.post('/',authMiddleware, role(...allowed_roles), asyncHandler(createQuestion));
 router.patch('/:id', authMiddleware, role(...allowed_roles), asyncHandler(updateQuestion));
 router.delete('/:id', authMiddleware, role(...allowed_roles), asyncHandler(deleteQuestion))
+
 export default router;
