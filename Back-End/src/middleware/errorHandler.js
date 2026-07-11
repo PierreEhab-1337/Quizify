@@ -4,7 +4,7 @@ export default function (err,req,res,next){
     if (err.code === "23505") {
         return res.status(409).json({ 
             success : false,
-            message: "Email already exists." });
+            message: "Already exists." });
     }
 
     if (err.code === "23503") {
@@ -12,6 +12,12 @@ export default function (err,req,res,next){
             success : false,
             message: "Foreign key constraint failed." });
     }
+
+    if(err.statusCode === 404 && err.type === "CATEGORY")
+        return res.status(404).json({ 
+            success : false,
+            message: "Category Not Found!" });
+
     
     res.status(500).json({
         success : false,

@@ -16,12 +16,6 @@ export const getAllUsers = async (req,res) => {
 export const getUser = async (req,res) => {
     const user_id = req.user.userId;
 
-    if(req.user.userId !== user_id && req.user.role !== "admin")
-        return res.status(403).json({
-            success : false,
-            message: "You can only retrieve your account"
-    });
-
     const result = await db.query(
         `SELECT ${SAFE_USER_FIELDS}  FROM users WHERE user_id = $1`,
         [user_id]
@@ -52,7 +46,7 @@ export const updateUser = async (req,res) =>{
     const updates = [];
     const values = [];
 
-    if(username === undefined && email === undefined ) // Executes when all imputs are empty only
+    if(username === undefined && email === undefined ) // Executes when all inputs are empty only
         return res.status(400).json({
             success : false,
             message: "Fill missing fields!"
