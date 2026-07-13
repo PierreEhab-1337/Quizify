@@ -74,7 +74,7 @@ export const getContest = async (req, res) => {
     const result = await db.query(`
         SELECT C.*, COUNT(QC.question_id) AS totalQuestions FROM contest C
         LEFT JOIN question_contest QC ON C.contest_id = QC.contest_id
-        WHERE user_id = $1 AND contest_id = $2
+        WHERE C.user_id = $1 AND C.contest_id = $2
         GROUP BY C.contest_id
     `, [userId, id]);
 
@@ -234,12 +234,17 @@ export const getQuestionsOfContest = async (req, res) => {
     const result = await db.query(
         `SELECT Q.question_id, Q.description, Q.question_type, U.question_order, U.status,
 
-        (SELECT STRING_AGG(C2.category_type, ', ')
+        (SELECT json_agg(
+            json_build_object(
+                'category_id', C2.category_id,
+                'category_type', C2.category_type
+            )
+        )
         FROM question_category QC
         JOIN category C2 ON C2.category_id = QC.category_id
         WHERE QC.question_id = Q.question_id) AS tags,
 
-        (SELECT STRING_AGG(I.image_path, ', ')
+        (SELECT json_agg(I.image_path)
         FROM question_image I
         WHERE I.question_id = Q.question_id) AS images,
 
@@ -277,12 +282,17 @@ export const getSingleQuestionOfContest = async (req, res) => {
     const result = await db.query(
         `SELECT Q.question_id, Q.description, Q.question_type, U.question_order, U.status,
 
-        (SELECT STRING_AGG(C2.category_type, ', ')
+        (SELECT json_agg(
+            json_build_object(
+                'category_id', C2.category_id,
+                'category_type', C2.category_type
+            )
+        )
         FROM question_category QC
         JOIN category C2 ON C2.category_id = QC.category_id
         WHERE QC.question_id = Q.question_id) AS tags,
 
-        (SELECT STRING_AGG(I.image_path, ', ')
+        (SELECT json_agg(I.image_path)
         FROM question_image I
         WHERE I.question_id = Q.question_id) AS images,
 
@@ -367,6 +377,7 @@ export const answerQuestion = async (req, res) => {
         `UPDATE question_contest SET status = $1 WHERE question_id = $2 AND contest_id = $3 RETURNING *`,
         [status, question_id, contest_id]
     );
+
     if (!updateResult.rowCount)
         return res.status(404).json({ success: false, message: "Question not found in this contest" });
 
@@ -411,6 +422,11 @@ export const endContest = async (req, res) => {
         [id]
     );
 
+    const updateResult = await db.query(
+        `UPDATE question_contest SET status = $1 WHERE contest_id = $2 RETURNING *`,
+        ["pending", id]
+    );
+
     res.status(200).json({
         success : true,
         message : "Contest has ended",
@@ -418,8 +434,8 @@ export const endContest = async (req, res) => {
         data :
         {
             data : result.rows[0],
-            score: score.rows[0]?.correctAnswer,
-            totalQuestions: totalResult.rows[0]?.totalQuestions
+            score: score.rows[0]?.correctanswer,
+            totalQuestions: totalResult.rows[0]?.totalquestions
         }
     });
 }
@@ -465,4 +481,3 @@ export const addQuestionsToContestRandomly = async (req, res) => {
     });
     
 }
-    

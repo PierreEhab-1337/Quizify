@@ -36,12 +36,17 @@ export const getAllQuestions = async (req, res) => {
     const result = await db.query(
         `SELECT Q.question_id, Q.description, Q.question_type, U.username,
 
-        (SELECT STRING_AGG(C2.category_type, ', ')
+        (SELECT json_agg(
+            json_build_object(
+                'category_id', C2.category_id,
+                'category_type', C2.category_type
+            )
+        )
         FROM question_category QC
         JOIN category C2 ON C2.category_id = QC.category_id
         WHERE QC.question_id = Q.question_id) AS tags,
 
-        (SELECT STRING_AGG(I.image_path, ', ')
+        (SELECT json_agg(I.image_path)
         FROM question_image I
         WHERE I.question_id = Q.question_id) AS images,
 
@@ -73,12 +78,17 @@ export const getQuestion = async (req,res) => {
     const result = await db.query(
         `SELECT Q.question_id, Q.description, Q.question_type, U.username,
 
-        (SELECT STRING_AGG(C2.category_type, ', ')
+        (SELECT json_agg(
+            json_build_object(
+                'category_id', C2.category_id,
+                'category_type', C2.category_type
+            )
+        )
         FROM question_category QC
         JOIN category C2 ON C2.category_id = QC.category_id
         WHERE QC.question_id = Q.question_id) AS tags,
 
-        (SELECT STRING_AGG(I.image_path, ', ')
+        (SELECT json_agg(I.image_path)
             FROM question_image I
             WHERE I.question_id = Q.question_id) AS images,
 
@@ -201,12 +211,17 @@ export const createQuestion = async (req, res, next) => {
         const finalResult = await client.query(
             `SELECT Q.question_id, Q.description, Q.question_type, U.username,
 
-            (SELECT STRING_AGG(C2.category_type, ', ')
+            (SELECT json_agg(
+                json_build_object(
+                    'category_id', C2.category_id,
+                    'category_type', C2.category_type
+                )
+            )
             FROM question_category QC
             JOIN category C2 ON C2.category_id = QC.category_id
             WHERE QC.question_id = Q.question_id) AS tags,
 
-            (SELECT STRING_AGG(I.image_path, ', ')
+            (SELECT json_agg(I.image_path)
                 FROM question_image I
                 WHERE I.question_id = Q.question_id) AS images,
 
@@ -397,12 +412,17 @@ export const updateQuestion = async (req,res) => {
         const finalResult = await client.query(
             `SELECT Q.question_id, Q.description, Q.question_type, U.username,
 
-            (SELECT STRING_AGG(C2.category_type, ', ')
+            (SELECT json_agg(
+                json_build_object(
+                    'category_id', C2.category_id,
+                    'category_type', C2.category_type
+                )
+            )
             FROM question_category QC
             JOIN category C2 ON C2.category_id = QC.category_id
             WHERE QC.question_id = Q.question_id) AS tags,
 
-            (SELECT STRING_AGG(I.image_path, ', ')
+            (SELECT json_agg(I.image_path)
                 FROM question_image I
                 WHERE I.question_id = Q.question_id) AS images,
 
@@ -432,4 +452,3 @@ export const updateQuestion = async (req,res) => {
         data : transactionResult.rows[0]
     });
 }
-
