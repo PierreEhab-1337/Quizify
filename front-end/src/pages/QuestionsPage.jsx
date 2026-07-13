@@ -1,79 +1,97 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  getQuestions,
+  createQuestion,
+  updateQuestion,
+  deleteQuestion,
+} from "../services/questionService";
+import { getCategories } from "../services/categoryService";
 
 // ════════════════════════════════════════════════════════════
-// بيانات تجريبية — تُستبدل بـ Firestore عند الربط
+// أنواع الأسئلة — لازم تتطابق مع الباك اند بالظبط (question_type)
 // ════════════════════════════════════════════════════════════
-const SAMPLE_CATEGORIES = [
-  "مسيحية", "قديسين", "ماث وألغاز", "كورة",
-  "جغرافيا", "تكنولوجيا وعلوم", "مناسبات دينية", "عبثيات",
-];
-
-const SAMPLE_QUESTIONS = [
-  { id: 1, text: "ما هو أطول نهر فى قارة أفريقيا؟", category: "جغرافيا", type: "withOptions", options: ["نهر النيل", "نهر الكونغو", "نهر النيجر", "نهر زامبيزى"], answer: "نهر النيل", images: [], answerImages: [] },
-  { id: 2, text: "اذكر اسم القديس المعروف بلقب صاحب العمود ومن أين كان أصله؟", category: "قديسين", type: "withoutOptions", options: [], answer: "", images: [], answerImages: [] },
-  { id: 3, text: "حدد اسم هذا المعلم السياحى من الصور الموضحة", category: "جغرافيا", type: "withOptionsAndImages", options: ["أبو الهول", "معبد أبو سمبل", "معبد الكرنك"], answer: "معبد أبو سمبل", images: ["img1", "img2"], answerImages: [] },
-  { id: 4, text: "تأمل الصور التالية ثم حدد العنصر المشترك بينها", category: "عبثيات", type: "withoutOptionsAndImages", options: [], answer: "", images: ["img1", "img2", "img3"], answerImages: ["answerImg"] },
-  { id: 5, text: "من هو مؤسس الكنيسة القبطية الأرثوذكسية؟", category: "مسيحية", type: "withOptions", options: ["مرقس الرسول", "بطرس الرسول", "بولس الرسول", "يوحنا الرسول"], answer: "مرقس الرسول", images: [], answerImages: [] },
-  { id: 6, text: "كم عدد مرات تعرض البابا أثناسيوس للنفى؟", category: "قديسين", type: "withOptions", options: ["3 مرات", "4 مرات", "5 مرات", "6 مرات"], answer: "5 مرات", images: [], answerImages: [] },
-  { id: 7, text: "ما هى عاصمة المملكة العربية السعودية؟", category: "جغرافيا", type: "withOptions", options: ["الرياض", "جدة", "مكة المكرمة", "المدينة المنورة"], answer: "الرياض", images: [], answerImages: [] },
-  { id: 8, text: "اشرح نظرية فيثاغورس مع ذكر مثال تطبيقى", category: "ماث وألغاز", type: "withoutOptions", options: [], answer: "", images: [], answerImages: [] },
-];
-
 const TYPE_LABELS = {
-  withOptions:             "نص + اختيارات",
-  withoutOptions:          "نص فقط",
-  withOptionsAndImages:    "نص + صور + اختيارات",
-  withoutOptionsAndImages: "نص + صور",
+  singleChoice: "اختيار واحد",
+  multiChoice:  "اختيار متعدد",
+  openEnded:    "إجابة مفتوحة",
 };
 
 const TYPE_COLOR = {
-  withOptions:             { bg: "rgba(245,200,64,.12)",  text: "#F5C840" },
-  withoutOptions:          { bg: "rgba(168,196,232,.12)", text: "#A8C4E8" },
-  withOptionsAndImages:    { bg: "rgba(76,175,130,.12)",  text: "#4CAF82" },
-  withoutOptionsAndImages: { bg: "rgba(90,128,168,.14)",  text: "#8FB0D8" },
+  singleChoice: { bg: "rgba(245,200,64,.12)",  text: "#F5C840" },
+  multiChoice:  { bg: "rgba(76,175,130,.12)",  text: "#4CAF82" },
+  openEnded:    { bg: "rgba(168,196,232,.12)", text: "#A8C4E8" },
 };
 
-const EMPTY_FORM = {
-  text: "", category: "", type: "withOptions",
-  optA: "", optB: "", optC: "", optD: "",
-  answer: "", images: [], answerImages: [],
-};
+const OPTION_LETTERS = ["أ", "ب", "ج", "د"];
+const EMPTY_CHOICE = () => ({ description: "", status: false });
 
 // ════════════════════════════════════════════════════════════
 // Modal إضافة / تعديل
 // ════════════════════════════════════════════════════════════
-function QuestionModal({ mode, initial, categories, onSave, onClose }) {
-  const [form, setForm] = useState(() => {
-    if (initial) {
-      return {
-        text: initial.text,
-        category: initial.category,
-        type: initial.type,
-        optA: initial.options[0] || "",
-        optB: initial.options[1] || "",
-        optC: initial.options[2] || "",
-        optD: initial.options[3] || "",
-        answer: initial.answer,
-        images: initial.images,
-        answerImages: initial.answerImages,
-      };
+function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
+  const [description, setDescription] = useState(initial?.description || "");
+  const [type, setType] = useState(initial?.question_type || "singleChoice");
+  const [tags, setTags] = useState(() => (initial?.tags || []).map((t) => t.category_type || t));
+  const [choices, setChoices] = useState(() => {
+    if (initial?.choices?.length) {
+      return initial.choices.map((c) => ({ description: c.description, status: !!c.status }));
     }
-    return { ...EMPTY_FORM };
+    return [EMPTY_CHOICE(), EMPTY_CHOICE()];
   });
+  const [error, setError] = useState("");
 
-  const hasOptions = form.type === "withOptions" || form.type === "withOptionsAndImages";
-  const hasImages  = form.type === "withOptionsAndImages" || form.type === "withoutOptionsAndImages";
+  const hasChoices = type !== "openEnded";
 
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleTag = (name) => {
+    setTags((prev) => (prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]));
+  };
+
+  const setChoiceText = (i, text) => {
+    setChoices((prev) => prev.map((c, idx) => (idx === i ? { ...c, description: text } : c)));
+  };
+
+  const setChoiceCorrect = (i) => {
+    setChoices((prev) =>
+      prev.map((c, idx) => {
+        if (type === "singleChoice") return { ...c, status: idx === i };
+        if (idx === i) return { ...c, status: !c.status };
+        return c;
+      })
+    );
+  };
+
+  const addChoice = () => {
+    if (choices.length >= 6) return;
+    setChoices((prev) => [...prev, EMPTY_CHOICE()]);
+  };
+
+  const removeChoice = (i) => {
+    if (choices.length <= 2) return;
+    setChoices((prev) => prev.filter((_, idx) => idx !== i));
+  };
 
   const handleSave = () => {
-    if (!form.text.trim())     return alert("نص السؤال مطلوب");
-    if (!form.category)        return alert("التصنيف مطلوب");
-    const options = hasOptions
-      ? [form.optA, form.optB, form.optC, form.optD].filter(Boolean)
-      : [];
-    if (hasOptions && options.length < 2) return alert("أدخل اختيارين على الأقل");
-    onSave({ text: form.text, category: form.category, type: form.type, options, answer: form.answer, images: form.images, answerImages: form.answerImages });
+    setError("");
+    if (!description.trim()) return setError("نص السؤال مطلوب");
+    if (tags.length === 0) return setError("اختر تصنيف واحد على الأقل");
+
+    let payloadChoices = [];
+    if (hasChoices) {
+      payloadChoices = choices
+        .map((c) => ({ description: c.description.trim(), status: c.status }))
+        .filter((c) => c.description);
+      if (payloadChoices.length < 2) return setError("أدخل اختيارين على الأقل");
+      const correctCount = payloadChoices.filter((c) => c.status).length;
+      if (correctCount === 0) return setError("حدد إجابة صحيحة واحدة على الأقل");
+      if (type === "singleChoice" && correctCount > 1) return setError("اختيار واحد يسمح بإجابة صحيحة واحدة فقط");
+    }
+
+    onSave({
+      description: description.trim(),
+      question_type: type,
+      tags,
+      choices: payloadChoices,
+    });
   };
 
   return (
@@ -87,103 +105,127 @@ function QuestionModal({ mode, initial, categories, onSave, onClose }) {
 
         <div style={S.modalBody}>
 
+          {error && <div style={S.errorBox}>{error}</div>}
+
           {/* نص السؤال */}
           <div style={S.fieldGroup}>
             <label style={S.label}>نص السؤال <span style={S.required}>*</span></label>
             <textarea
               rows={3}
-              value={form.text}
-              onChange={(e) => set("text", e.target.value)}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               placeholder="أدخل نص السؤال"
               style={S.textarea}
             />
           </div>
 
-          {/* التصنيف + النوع */}
-          <div style={S.twoCol}>
-            <div style={S.fieldGroup}>
-              <label style={S.label}>التصنيف <span style={S.required}>*</span></label>
-              <select value={form.category} onChange={(e) => set("category", e.target.value)} style={S.select}>
-                <option value="">اختر التصنيف</option>
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div style={S.fieldGroup}>
-              <label style={S.label}>نوع السؤال</label>
-              <select value={form.type} onChange={(e) => set("type", e.target.value)} style={S.select}>
-                {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
+          {/* نوع السؤال */}
+          <div style={S.fieldGroup}>
+            <label style={S.label}>نوع السؤال</label>
+            <select
+              value={type}
+              onChange={(e) => {
+                const t = e.target.value;
+                setType(t);
+                if (t === "singleChoice") {
+                  // اسمح بإجابة صحيحة واحدة بس
+                  setChoices((prev) => {
+                    const firstCorrect = prev.findIndex((c) => c.status);
+                    return prev.map((c, i) => ({ ...c, status: i === firstCorrect }));
+                  });
+                }
+              }}
+              style={S.select}
+            >
+              {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
           </div>
 
-          {/* الصور */}
-          {hasImages && (
-            <div style={S.fieldGroup}>
-              <label style={S.label}>صور السؤال <span style={S.muted}>(حد أقصى 3 صور — 5MB لكل صورة)</span></label>
-              <div style={S.uploadZone}>
-                <span style={{ color: "#6A90B8", fontSize: "13px" }}>اضغط لرفع صور أو اسحبها هنا</span>
+          {/* التصنيفات (tags) */}
+          <div style={S.fieldGroup}>
+            <label style={S.label}>التصنيفات <span style={S.required}>*</span></label>
+            {categories.length === 0 ? (
+              <span style={S.muted}>لا توجد تصنيفات — أضف تصنيف أولاً من صفحة التصنيفات</span>
+            ) : (
+              <div style={S.tagsWrap}>
+                {categories.map((c) => (
+                  <button
+                    type="button"
+                    key={c.name}
+                    onClick={() => toggleTag(c.name)}
+                    style={{
+                      ...S.tagChip,
+                      background: tags.includes(c.name) ? "rgba(245,200,64,.15)" : "transparent",
+                      borderColor: tags.includes(c.name) ? "#F5C840" : "#2E5FA8",
+                      color: tags.includes(c.name) ? "#F5C840" : "#A8C4E8",
+                    }}
+                  >
+                    {c.name}
+                  </button>
+                ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* الاختيارات */}
-          {hasOptions && (
+          {hasChoices && (
             <div style={S.fieldGroup}>
-              <label style={S.label}>الاختيارات <span style={S.muted}>(2 على الأقل — 4 كحد أقصى)</span></label>
+              <label style={S.label}>
+                الاختيارات <span style={S.muted}>
+                  ({type === "singleChoice" ? "حدد إجابة صحيحة واحدة" : "حدد إجابة صحيحة واحدة أو أكثر"})
+                </span>
+              </label>
               <div style={S.optionsGrid}>
-                {[["optA","أ"], ["optB","ب"], ["optC","ج"], ["optD","د"]].map(([k, prefix]) => (
-                  <div key={k} style={S.optionRow}>
-                    <span style={S.optPrefix}>{prefix}</span>
+                {choices.map((c, i) => (
+                  <div key={i} style={S.optionRow}>
+                    <button
+                      type="button"
+                      onClick={() => setChoiceCorrect(i)}
+                      title="إجابة صحيحة؟"
+                      style={{
+                        ...S.correctToggle,
+                        borderRadius: type === "singleChoice" ? "50%" : "5px",
+                        background: c.status ? "#4CAF82" : "transparent",
+                        borderColor: c.status ? "#4CAF82" : "#2E5FA8",
+                        color: c.status ? "#0F2040" : "transparent",
+                      }}
+                    >
+                      ✓
+                    </button>
+                    <span style={S.optPrefix}>{OPTION_LETTERS[i] || i + 1}</span>
                     <input
                       type="text"
-                      value={form[k]}
-                      onChange={(e) => set(k, e.target.value)}
-                      placeholder={`الاختيار ${prefix}`}
+                      value={c.description}
+                      onChange={(e) => setChoiceText(i, e.target.value)}
+                      placeholder={`الاختيار ${OPTION_LETTERS[i] || i + 1}`}
                       style={S.input}
                     />
+                    {choices.length > 2 && (
+                      <button type="button" style={S.removeOptBtn} onClick={() => removeChoice(i)}>✕</button>
+                    )}
                   </div>
                 ))}
               </div>
+              {choices.length < 6 && (
+                <button type="button" style={S.addOptBtn} onClick={addChoice}>+ إضافة اختيار</button>
+              )}
             </div>
           )}
 
-          {/* الإجابة الصحيحة */}
-          {hasOptions && (
-            <div style={S.fieldGroup}>
-              <label style={S.label}>الإجابة الصحيحة</label>
-              <select value={form.answer} onChange={(e) => set("answer", e.target.value)} style={S.select}>
-                <option value="">اختر الإجابة الصحيحة</option>
-                {[form.optA, form.optB, form.optC, form.optD].filter(Boolean).map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            </div>
+          {type === "openEnded" && (
+            <div style={S.infoBox}>الأسئلة المفتوحة مفيهاش اختيارات — تتقيّم يدوياً وقت العرض.</div>
           )}
-
-          {/* صور الإجابة */}
-          <div style={S.fieldGroup}>
-            <label style={S.label}>
-              صور الإجابة
-              <span style={S.muted}> — إذا تُركت فارغة يُستخدم Done الافتراضى</span>
-            </label>
-            <div style={S.uploadZone}>
-              <span style={{ color: "#6A90B8", fontSize: "13px" }}>اضغط لرفع صور الإجابة</span>
-            </div>
-          </div>
 
         </div>
 
         <div style={S.modalFooter}>
-          <button style={S.cancelBtn} onClick={onClose}>إلغاء</button>
+          <button style={S.cancelBtn} onClick={onClose} disabled={saving}>إلغاء</button>
           <button
-            style={S.saveBtn}
+            style={{ ...S.saveBtn, opacity: saving ? 0.6 : 1, cursor: saving ? "not-allowed" : "pointer" }}
             onClick={handleSave}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            onMouseDown={(e) => { e.currentTarget.style.transform = "scale(0.97)"; }}
-            onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+            disabled={saving}
           >
-            {mode === "add" ? "إضافة السؤال" : "حفظ التعديلات"}
+            {saving ? "جارٍ الحفظ..." : mode === "add" ? "إضافة السؤال" : "حفظ التعديلات"}
           </button>
         </div>
 
@@ -195,7 +237,7 @@ function QuestionModal({ mode, initial, categories, onSave, onClose }) {
 // ════════════════════════════════════════════════════════════
 // Modal تأكيد الحذف
 // ════════════════════════════════════════════════════════════
-function DeleteModal({ question, onConfirm, onCancel }) {
+function DeleteModal({ question, onConfirm, onCancel, busy }) {
   if (!question) return null;
   return (
     <div style={S.overlay} onClick={onCancel}>
@@ -204,15 +246,14 @@ function DeleteModal({ question, onConfirm, onCancel }) {
         <div style={{ color: "#FFFFFF", fontSize: "17px", fontWeight: 800, marginBottom: "10px", textAlign: "center" }}>
           حذف السؤال
         </div>
-        <div style={{ color: "#A8C4E8", fontSize: "13px", lineHeight: 1.7, textAlign: "center", marginBottom: "8px" }}>
-          هل أنت متأكد من حذف هذا السؤال نهائياً؟
-        </div>
-        <div style={{ color: "#6A90B8", fontSize: "12px", textAlign: "center", marginBottom: "24px", lineHeight: 1.6 }}>
-          إذا كان السؤال مستخدماً داخل مسابقة سيتم استبداله تلقائياً بسؤال من نفس التصنيف.
+        <div style={{ color: "#A8C4E8", fontSize: "13px", lineHeight: 1.7, textAlign: "center", marginBottom: "24px" }}>
+          هل أنت متأكد من حذف هذا السؤال نهائياً؟ لو السؤال مستخدم داخل مسابقة هيتحذف منها كمان.
         </div>
         <div style={S.modalFooter}>
-          <button style={S.cancelBtn} onClick={onCancel}>تراجع</button>
-          <button style={S.deleteConfirmBtn} onClick={onConfirm}>حذف نهائياً</button>
+          <button style={S.cancelBtn} onClick={onCancel} disabled={busy}>تراجع</button>
+          <button style={{ ...S.deleteConfirmBtn, opacity: busy ? 0.6 : 1 }} onClick={onConfirm} disabled={busy}>
+            {busy ? "جارٍ الحذف..." : "حذف نهائياً"}
+          </button>
         </div>
       </div>
     </div>
@@ -224,7 +265,8 @@ function DeleteModal({ question, onConfirm, onCancel }) {
 // ════════════════════════════════════════════════════════════
 function QuestionCard({ q, onEdit, onDelete }) {
   const [hover, setHover] = useState(false);
-  const typeStyle = TYPE_COLOR[q.type] || TYPE_COLOR.withoutOptions;
+  const typeStyle = TYPE_COLOR[q.question_type] || TYPE_COLOR.openEnded;
+  const tagNames = (q.tags || []).map((t) => t.category_type || t);
 
   return (
     <div
@@ -237,46 +279,35 @@ function QuestionCard({ q, onEdit, onDelete }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* الرأس */}
       <div style={S.cardTop}>
         <span style={{ ...S.typeBadge, background: typeStyle.bg, color: typeStyle.text }}>
-          {TYPE_LABELS[q.type]}
+          {TYPE_LABELS[q.question_type] || q.question_type}
         </span>
-        <span style={S.catBadge}>{q.category}</span>
+        {tagNames.map((t) => (
+          <span key={t} style={S.catBadge}>{t}</span>
+        ))}
       </div>
 
-      {/* النص */}
-      <p style={S.cardText}>{q.text}</p>
+      <p style={S.cardText}>{q.description}</p>
 
-      {/* الاختيارات */}
-      {q.options.length > 0 && (
+      {q.choices?.length > 0 && (
         <div style={S.cardOptions}>
-          {q.options.map((o, i) => (
+          {q.choices.map((c, i) => (
             <span
               key={i}
               style={{
                 ...S.optPill,
-                background: o === q.answer ? "rgba(76,175,130,.15)" : "rgba(255,255,255,.05)",
-                borderColor: o === q.answer ? "#4CAF82" : "rgba(255,255,255,.1)",
-                color: o === q.answer ? "#4CAF82" : "#A8C4E8",
+                background: c.status ? "rgba(76,175,130,.15)" : "rgba(255,255,255,.05)",
+                borderColor: c.status ? "#4CAF82" : "rgba(255,255,255,.1)",
+                color: c.status ? "#4CAF82" : "#A8C4E8",
               }}
             >
-              {["أ","ب","ج","د"][i]}- {o}
+              {OPTION_LETTERS[i] || i + 1}- {c.description}
             </span>
           ))}
         </div>
       )}
 
-      {/* الصور */}
-      {q.images.length > 0 && (
-        <div style={S.cardImagesRow}>
-          {q.images.map((_, i) => (
-            <div key={i} style={S.imgThumb}>صورة {i + 1}</div>
-          ))}
-        </div>
-      )}
-
-      {/* الأزرار */}
       <div style={S.cardActions}>
         <button
           style={S.editBtn}
@@ -303,38 +334,94 @@ function QuestionCard({ q, onEdit, onDelete }) {
 // الصفحة الرئيسية
 // ════════════════════════════════════════════════════════════
 export default function QuestionsPage() {
-  const [questions, setQuestions]       = useState(SAMPLE_QUESTIONS);
-  const [searchText, setSearchText]     = useState("");
-  const [filterCat, setFilterCat]       = useState("الكل");
-  const [filterType, setFilterType]     = useState("الكل");
-  const [modal, setModal]               = useState(null); // null | "add" | { mode:"edit", q }
+  const [questions, setQuestions] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [searchText, setSearchText] = useState("");
+  const [filterCat, setFilterCat] = useState("الكل");
+  const [filterType, setFilterType] = useState("الكل");
+
+  const [modal, setModal] = useState(null); // null | "add" | { mode:"edit", q }
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // ── الفلترة ──────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    return questions.filter((q) => {
-      const matchSearch = !searchText.trim() || q.text.includes(searchText.trim());
-      const matchCat    = filterCat  === "الكل" || q.category === filterCat;
-      const matchType   = filterType === "الكل" || q.type === filterType;
-      return matchSearch && matchCat && matchType;
-    });
-  }, [questions, searchText, filterCat, filterType]);
+  // ── تحميل التصنيفات (مرة واحدة) ──────────────────────────
+  useEffect(() => {
+    getCategories()
+      .then((list) => setCategories(list.map((c) => ({ id: c.category_id, name: c.category_type }))))
+      .catch(() => {});
+  }, []);
+
+  // ── تحميل الأسئلة (فلترة من السيرفر) ─────────────────────
+  const loadQuestions = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const filters = {};
+      if (filterCat !== "الكل") filters.category = filterCat;
+      if (filterType !== "الكل") filters.question_type = filterType;
+      if (searchText.trim()) filters.search = searchText.trim();
+      const list = await getQuestions(filters);
+      setQuestions(list);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحميل الأسئلة");
+    } finally {
+      setLoading(false);
+    }
+  }, [filterCat, filterType, searchText]);
+
+  useEffect(() => {
+    const t = setTimeout(loadQuestions, searchText ? 350 : 0); // debounce بسيط للبحث
+    return () => clearTimeout(t);
+  }, [loadQuestions, searchText]);
 
   // ── CRUD ─────────────────────────────────────────────────
-  const handleAdd = (data) => {
-    setQuestions((prev) => [...prev, { id: Date.now(), ...data }]);
-    setModal(null);
+  const handleAdd = async (payload) => {
+    setSaving(true);
+    setError("");
+    try {
+      await createQuestion(payload);
+      setModal(null);
+      await loadQuestions();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر إضافة السؤال");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEdit = (data) => {
-    setQuestions((prev) => prev.map((q) => q.id === modal.q.id ? { ...q, ...data } : q));
-    setModal(null);
+  const handleEdit = async (payload) => {
+    setSaving(true);
+    setError("");
+    try {
+      await updateQuestion(modal.q.question_id, payload);
+      setModal(null);
+      await loadQuestions();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تعديل السؤال");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = () => {
-    setQuestions((prev) => prev.filter((q) => q.id !== pendingDelete.id));
-    setPendingDelete(null);
+  const handleDelete = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await deleteQuestion(pendingDelete.question_id);
+      setPendingDelete(null);
+      await loadQuestions();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر حذف السؤال");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const countLabel = useMemo(() => `${questions.length} سؤال`, [questions.length]);
+  const filtersActive = filterCat !== "الكل" || filterType !== "الكل" || !!searchText;
 
   return (
     <>
@@ -374,7 +461,7 @@ export default function QuestionsPage() {
             />
             <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} style={S.filterSelect}>
               <option value="الكل">كل التصنيفات</option>
-              {SAMPLE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
             <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={S.filterSelect}>
               <option value="الكل">كل الأنواع</option>
@@ -384,12 +471,8 @@ export default function QuestionsPage() {
 
           {/* ── العداد ── */}
           <div style={S.countBar}>
-            <span style={S.countText}>
-              {filtered.length === questions.length
-                ? `${questions.length} سؤال`
-                : `${filtered.length} من ${questions.length} سؤال`}
-            </span>
-            {(filterCat !== "الكل" || filterType !== "الكل" || searchText) && (
+            <span style={S.countText}>{countLabel}</span>
+            {filtersActive && (
               <button
                 style={S.clearFilters}
                 onClick={() => { setFilterCat("الكل"); setFilterType("الكل"); setSearchText(""); }}
@@ -399,14 +482,18 @@ export default function QuestionsPage() {
             )}
           </div>
 
+          {error && <div style={{ ...S.infoBox, marginBottom: "16px" }}>{error}</div>}
+
           {/* ── الجريد ── */}
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div style={{ color: "#6A90B8", padding: "20px 0" }}>جارِ التحميل...</div>
+          ) : questions.length === 0 ? (
             <div style={S.empty}>لا توجد أسئلة تطابق البحث الحالى</div>
           ) : (
             <div style={S.grid}>
-              {filtered.map((q) => (
+              {questions.map((q) => (
                 <QuestionCard
-                  key={q.id}
+                  key={q.question_id}
                   q={q}
                   onEdit={(q) => setModal({ mode: "edit", q })}
                   onDelete={(q) => setPendingDelete(q)}
@@ -418,33 +505,33 @@ export default function QuestionsPage() {
         </div>
       </div>
 
-      {/* ── Modal الإضافة ── */}
       {modal === "add" && (
         <QuestionModal
           mode="add"
           initial={null}
-          categories={SAMPLE_CATEGORIES}
+          categories={categories}
           onSave={handleAdd}
           onClose={() => setModal(null)}
+          saving={saving}
         />
       )}
 
-      {/* ── Modal التعديل ── */}
       {modal && modal.mode === "edit" && (
         <QuestionModal
           mode="edit"
           initial={modal.q}
-          categories={SAMPLE_CATEGORIES}
+          categories={categories}
           onSave={handleEdit}
           onClose={() => setModal(null)}
+          saving={saving}
         />
       )}
 
-      {/* ── Modal الحذف ── */}
       <DeleteModal
         question={pendingDelete}
         onConfirm={handleDelete}
         onCancel={() => setPendingDelete(null)}
+        busy={saving}
       />
     </>
   );
@@ -488,7 +575,6 @@ const S = {
     padding: "40px 28px 0",
   },
 
-  // هيدر الصفحة
   pageHeader: {
     display: "flex",
     alignItems: "center",
@@ -515,7 +601,6 @@ const S = {
     boxShadow: "0 4px 0 #B87A10",
   },
 
-  // شريط الفلاتر
   filtersBar: {
     display: "flex",
     gap: "12px",
@@ -548,7 +633,6 @@ const S = {
     cursor: "pointer",
   },
 
-  // العداد
   countBar: {
     display: "flex",
     alignItems: "center",
@@ -572,7 +656,6 @@ const S = {
     textDecoration: "underline",
   },
 
-  // الجريد
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
@@ -585,7 +668,6 @@ const S = {
     padding: "60px 0",
   },
 
-  // كارت السؤال
   card: {
     background: "#162E58",
     border: "1.5px solid #2E5FA8",
@@ -635,19 +717,6 @@ const S = {
     borderRadius: "6px",
     padding: "4px 10px",
     lineHeight: 1.5,
-  },
-  cardImagesRow: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-  imgThumb: {
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.12)",
-    borderRadius: "6px",
-    padding: "6px 12px",
-    fontSize: "11px",
-    color: "#6A90B8",
   },
   cardActions: {
     display: "flex",
@@ -742,7 +811,6 @@ const S = {
     flexShrink: 0,
   },
 
-  // حقول الفورم
   fieldGroup: {
     display: "flex",
     flexDirection: "column",
@@ -796,18 +864,20 @@ const S = {
     outline: "none",
     cursor: "pointer",
   },
-  twoCol: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "14px",
+  tagsWrap: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
   },
-  uploadZone: {
-    background: "#0F2040",
-    border: "1.5px dashed #2E5FA8",
-    borderRadius: "8px",
-    padding: "20px",
-    textAlign: "center",
+  tagChip: {
+    border: "1.5px solid",
+    borderRadius: "20px",
+    padding: "6px 14px",
+    fontSize: "12px",
+    fontWeight: 700,
+    fontFamily: "'Cairo', sans-serif",
     cursor: "pointer",
+    transition: "all 0.15s",
   },
   optionsGrid: {
     display: "flex",
@@ -819,6 +889,21 @@ const S = {
     alignItems: "center",
     gap: "10px",
   },
+  correctToggle: {
+    width: "22px",
+    height: "22px",
+    minWidth: "22px",
+    border: "1.5px solid",
+    fontSize: "12px",
+    fontWeight: 900,
+    lineHeight: "1",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "transparent",
+    transition: "all 0.15s",
+  },
   optPrefix: {
     color: "#F5C840",
     fontWeight: 800,
@@ -826,8 +911,47 @@ const S = {
     minWidth: "18px",
     textAlign: "center",
   },
+  removeOptBtn: {
+    background: "none",
+    border: "none",
+    color: "#D24646",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontFamily: "'Cairo', sans-serif",
+    padding: "0 4px",
+  },
+  addOptBtn: {
+    alignSelf: "flex-start",
+    background: "none",
+    border: "none",
+    color: "#F5C840",
+    fontSize: "12px",
+    fontWeight: 700,
+    fontFamily: "'Cairo', sans-serif",
+    cursor: "pointer",
+    padding: 0,
+    marginTop: "4px",
+  },
 
-  // أزرار الفوتر
+  errorBox: {
+    background: "rgba(210,70,70,0.1)",
+    border: "1px solid rgba(210,70,70,0.3)",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    color: "#E07878",
+    fontSize: "13px",
+    lineHeight: 1.6,
+  },
+  infoBox: {
+    background: "rgba(245,200,64,.08)",
+    border: "1px solid rgba(245,200,64,.25)",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    color: "#F5C840",
+    fontSize: "12px",
+    lineHeight: 1.6,
+  },
+
   cancelBtn: {
     flex: 1,
     background: "transparent",
@@ -855,7 +979,6 @@ const S = {
     boxShadow: "0 3px 0 #B87A10",
   },
 
-  // حذف
   deleteIconCircle: {
     width: "44px",
     height: "44px",

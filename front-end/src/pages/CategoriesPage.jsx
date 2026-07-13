@@ -1,18 +1,11 @@
-import { useState, useMemo } from "react";
-
-// ════════════════════════════════════════════════════════════
-// بيانات تجريبية — تُستبدل بـ Firestore عند الربط
-// ════════════════════════════════════════════════════════════
-const SAMPLE_CATEGORIES = [
-  { id: 1, name: "مسيحية",          count: 52 },
-  { id: 2, name: "قديسين",          count: 41 },
-  { id: 3, name: "ماث وألغاز",      count: 38 },
-  { id: 4, name: "كورة",            count: 34 },
-  { id: 5, name: "جغرافيا",         count: 30 },
-  { id: 6, name: "تكنولوجيا وعلوم", count: 27 },
-  { id: 7, name: "مناسبات دينية",   count: 16 },
-  { id: 8, name: "عبثيات",          count: 10 },
-];
+import { useState, useMemo, useEffect, useCallback } from "react";
+import {
+  getCategories,
+  createCategory,
+  renameCategory,
+  deleteCategory,
+} from "../services/categoryService";
+import { getQuestions, updateQuestion, deleteQuestion } from "../services/questionService";
 
 // ════════════════════════════════════════════════════════════
 // Modal إضافة / تعديل اسم التصنيف
@@ -87,7 +80,7 @@ function CategoryModal({ mode, initial, existingNames, onSave, onClose }) {
 // ════════════════════════════════════════════════════════════
 // Modal حذف التصنيف — مع معالجة الأسئلة
 // ════════════════════════════════════════════════════════════
-function DeleteCategoryModal({ category, otherCategories, onConfirm, onClose }) {
+function DeleteCategoryModal({ category, otherCategories, onConfirm, onClose, busy }) {
   // decisions: { questionIndex: "move" | "delete", targetCategory: string }
   // هنا بنتعامل مع قرار جماعى لأن الأسئلة الحقيقية ستُجلب من Firestore
   const [decision, setDecision] = useState("move"); // "move" | "delete"
@@ -205,17 +198,21 @@ function DeleteCategoryModal({ category, otherCategories, onConfirm, onClose }) 
         </div>
 
         <div style={S.modalFooter}>
-          <button style={S.cancelBtn} onClick={onClose}>تراجع</button>
+          <button style={S.cancelBtn} onClick={onClose} disabled={busy}>تراجع</button>
           <button
             style={{
               ...S.deleteConfirmBtn,
-              opacity: (hasQuestions && decision === "move" && !target) ? 0.5 : 1,
+              opacity: (busy || (hasQuestions && decision === "move" && !target)) ? 0.5 : 1,
+              cursor: busy ? "not-allowed" : "pointer",
             }}
             onClick={handleConfirm}
+            disabled={busy}
           >
-            {hasQuestions
-              ? (decision === "move" ? "نقل وحذف التصنيف" : "حذف الأسئلة والتصنيف")
-              : "حذف التصنيف"}
+            {busy
+              ? "جارٍ التنفيذ..."
+              : hasQuestions
+                ? (decision === "move" ? "نقل وحذف التصنيف" : "حذف الأسئلة والتصنيف")
+                : "حذف التصنيف"}
           </button>
         </div>
 
@@ -279,39 +276,88 @@ function CategoryCard({ cat, totalQuestions, onEdit, onDelete }) {
 // الصفحة الرئيسية
 // ════════════════════════════════════════════════════════════
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState(SAMPLE_CATEGORIES);
+  const [categories, setCategories] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState("");
+  const [busy,       setBusy]       = useState(false); // أثناء تنفيذ عملية (حذف/نقل أسئلة)
   const [modal,      setModal]      = useState(null); // null | "add" | { mode:"edit", cat }
   const [delTarget,  setDelTarget]  = useState(null);
 
   const totalQuestions = useMemo(() => categories.reduce((s, c) => s + c.count, 0), [categories]);
   const existingNames  = categories.map((c) => c.name);
 
+  const loadCategories = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const list = await getCategories();
+      setCategories(
+        list.map((c) => ({
+          id: c.category_id,
+          name: c.category_type,
+          count: c.question_count,
+        }))
+      );
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحميل التصنيفات");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
+
   // ── إضافة ─────────────────────────────────────────────────
-  const handleAdd = (name) => {
-    setCategories((prev) => [...prev, { id: Date.now(), name, count: 0 }]);
-    setModal(null);
+  const handleAdd = async (name) => {
+    try {
+      await createCategory(name);
+      setModal(null);
+      await loadCategories();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر إضافة التصنيف");
+    }
   };
 
   // ── تعديل ────────────────────────────────────────────────
-  const handleEdit = (name) => {
-    setCategories((prev) =>
-      prev.map((c) => c.id === modal.cat.id ? { ...c, name } : c)
-    );
-    setModal(null);
+  const handleEdit = async (name) => {
+    try {
+      await renameCategory(modal.cat.id, name);
+      setModal(null);
+      await loadCategories();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تعديل التصنيف");
+    }
   };
 
-  // ── حذف ──────────────────────────────────────────────────
-  const handleDelete = ({ decision, target }) => {
-    setCategories((prev) => {
-      let updated = prev.filter((c) => c.id !== delTarget.id);
-      if (decision === "move" && target) {
-        updated = updated.map((c) =>
-          c.name === target ? { ...c, count: c.count + delTarget.count } : c
-        );
+  // ── حذف (مع نقل/حذف الأسئلة المرتبطة الأول لو موجودة) ─────
+  const handleDelete = async ({ decision, target }) => {
+    setBusy(true);
+    setError("");
+    try {
+      if (delTarget.count > 0) {
+        const questionsInCategory = await getQuestions({ category: delTarget.name });
+        if (decision === "move" && target) {
+          await Promise.all(
+            questionsInCategory.map((q) =>
+              updateQuestion(q.question_id, { tags: [target] })
+            )
+          );
+        } else if (decision === "delete") {
+          await Promise.all(
+            questionsInCategory.map((q) => deleteQuestion(q.question_id))
+          );
+        }
       }
-      return updated;
-    });
-    setDelTarget(null);
+      await deleteCategory(delTarget.id);
+      setDelTarget(null);
+      await loadCategories();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر حذف التصنيف");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -359,21 +405,27 @@ export default function CategoriesPage() {
             </div>
           </div>
 
+          {error && <div style={S.infoBox}>{error}</div>}
+
           {/* ── الجريد ── */}
-          <div style={S.grid}>
-            {categories
-              .slice()
-              .sort((a, b) => b.count - a.count)
-              .map((cat) => (
-                <CategoryCard
-                  key={cat.id}
-                  cat={cat}
-                  totalQuestions={totalQuestions}
-                  onEdit={(cat) => setModal({ mode: "edit", cat })}
-                  onDelete={(cat) => setDelTarget(cat)}
-                />
-              ))}
-          </div>
+          {loading ? (
+            <div style={{ color: "#6A90B8", padding: "20px 0" }}>جارِ التحميل...</div>
+          ) : (
+            <div style={S.grid}>
+              {categories
+                .slice()
+                .sort((a, b) => b.count - a.count)
+                .map((cat) => (
+                  <CategoryCard
+                    key={cat.id}
+                    cat={cat}
+                    totalQuestions={totalQuestions}
+                    onEdit={(cat) => setModal({ mode: "edit", cat })}
+                    onDelete={(cat) => setDelTarget(cat)}
+                  />
+                ))}
+            </div>
+          )}
 
         </div>
       </div>
@@ -405,6 +457,7 @@ export default function CategoriesPage() {
           otherCategories={categories.filter((c) => c.id !== delTarget.id)}
           onConfirm={handleDelete}
           onClose={() => setDelTarget(null)}
+          busy={busy}
         />
       )}
     </>

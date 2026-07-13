@@ -1,97 +1,28 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { getQuestions, createQuestion } from "../services/questionService";
+import { getCategories } from "../services/categoryService";
+import { getAllUsers } from "../services/userService";
+import { getAllContestsAdmin } from "../services/contestService";
 
 // ════════════════════════════════════════════════════════════
-// بيانات تجريبية — تُستبدل بـ Firestore عند الربط
+// ملحوظة مهمة: الباك اند حالياً مفيهوش endpoint استيراد جماعي
+// ولا دعم لملفات Excel. الصفحة دي بتصدّر/تستورد بنك الأسئلة بس،
+// بصيغة JSON، عن طريق تكرار نداء POST /question لكل سؤال.
 // ════════════════════════════════════════════════════════════
-const MOCK_COUNTS = {
-  questions:   248,
-  categories:    8,
-  users:         4,
-  contests:     17,
-};
 
-// ════════════════════════════════════════════════════════════
-// Modal اختيار صيغة التصدير
-// ════════════════════════════════════════════════════════════
-function ExportFormatModal({ section, onExport, onClose }) {
-  const [format, setFormat] = useState("json");
-
-  const formats = [
-    { id: "json",  label: "JSON",  desc: "مناسب للنسخ الاحتياطي واستعادة البيانات" },
-    { id: "excel", label: "Excel", desc: "مناسب للمراجعة والتعديل خارج النظام"     },
-  ];
-
-  return (
-    <div style={S.overlay} onClick={onClose}>
-      <div style={{ ...S.modal, maxWidth: "400px" }} onClick={(e) => e.stopPropagation()}>
-
-        <div style={S.modalHeader}>
-          <span style={S.modalTitle}>تصدير {section.label}</span>
-          <button style={S.closeBtn} onClick={onClose}>✕</button>
-        </div>
-
-        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div style={{ color: "#A8C4E8", fontSize: "13px", marginBottom: "4px" }}>
-            اختر صيغة الملف المطلوبة:
-          </div>
-          {formats.map((f) => (
-            <div
-              key={f.id}
-              style={{
-                ...S.formatOption,
-                borderColor: format === f.id ? "#F5C840" : "#2E5FA8",
-                background:  format === f.id ? "rgba(245,200,64,.06)" : "transparent",
-              }}
-              onClick={() => setFormat(f.id)}
-            >
-              <div style={{ ...S.radio, borderColor: format === f.id ? "#F5C840" : "#2E5FA8" }}>
-                {format === f.id && <div style={S.radioDot} />}
-              </div>
-              <div>
-                <div style={{ color: "#FFFFFF", fontWeight: 700, fontSize: "14px" }}>{f.label}</div>
-                <div style={{ color: "#6A90B8", fontSize: "12px", marginTop: "2px" }}>{f.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={S.modalFooter}>
-          <button style={S.cancelBtn} onClick={onClose}>إلغاء</button>
-          <button
-            style={S.saveBtn}
-            onClick={() => onExport(format)}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            onMouseDown={(e) => { e.currentTarget.style.transform = "scale(0.97)"; }}
-            onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-          >
-            تصدير
-          </button>
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
-// Modal نتيجة الاستيراد
-// ════════════════════════════════════════════════════════════
 function ImportResultModal({ result, onClose }) {
   if (!result) return null;
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div style={{ ...S.modal, maxWidth: "400px" }} onClick={(e) => e.stopPropagation()}>
-
+      <div style={{ ...S.modal, maxWidth: "460px" }} onClick={(e) => e.stopPropagation()}>
         <div style={S.modalHeader}>
           <span style={S.modalTitle}>نتيجة الاستيراد</span>
           <button style={S.closeBtn} onClick={onClose}>✕</button>
         </div>
 
         <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
-
           <div style={{ color: "#A8C4E8", fontSize: "13px" }}>
-            تم معالجة الملف بنجاح. ملخص العملية:
+            تم معالجة الملف. ملخص العملية:
           </div>
 
           <div style={S.resultGrid}>
@@ -100,26 +31,20 @@ function ImportResultModal({ result, onClose }) {
               <div style={S.resultLbl}>تمت إضافته</div>
             </div>
             <div style={S.resultItem}>
-              <div style={{ ...S.resultVal, color: "#F5C840" }}>{result.skipped}</div>
-              <div style={S.resultLbl}>تم تجاهله</div>
-            </div>
-            <div style={S.resultItem}>
-              <div style={{ ...S.resultVal, color: "#D24646" }}>{result.failed}</div>
+              <div style={{ ...S.resultVal, color: "#D24646" }}>{result.failed.length}</div>
               <div style={S.resultLbl}>فشل في الاستيراد</div>
             </div>
           </div>
 
-          {result.skipped > 0 && (
-            <div style={S.infoBox}>
-              العناصر المتجاهلة موجودة بالفعل في النظام ولم يتم تعديلها.
+          {result.failed.length > 0 && (
+            <div style={{ ...S.infoBox, borderColor: "rgba(210,70,70,.3)", background: "rgba(210,70,70,.06)", color: "#E07878", maxHeight: "180px", overflowY: "auto" }}>
+              {result.failed.map((f, i) => (
+                <div key={i} style={{ marginBottom: i < result.failed.length - 1 ? "8px" : 0 }}>
+                  <strong>سؤال {f.index + 1}:</strong> {f.message}
+                </div>
+              ))}
             </div>
           )}
-          {result.failed > 0 && (
-            <div style={{ ...S.infoBox, borderColor: "rgba(210,70,70,.3)", background: "rgba(210,70,70,.06)", color: "#E07878" }}>
-              بعض العناصر لم يتم استيرادها بسبب بيانات غير صالحة أو مفقودة.
-            </div>
-          )}
-
         </div>
 
         <div style={S.modalFooter}>
@@ -132,116 +57,135 @@ function ImportResultModal({ result, onClose }) {
             حسناً
           </button>
         </div>
-
       </div>
     </div>
   );
 }
-
-// ════════════════════════════════════════════════════════════
-// سيكشن واحد (Export + Import)
-// ════════════════════════════════════════════════════════════
-function DataSection({ section, counts, onExportClick, onImportDone }) {
-  const fileRef   = useRef(null);
-  const [loading, setLoading] = useState(false); // "import"
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setLoading("import");
-    // محاكاة معالجة الملف — تُستبدل بالمنطق الحقيقي عند ربط Firestore
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    e.target.value = "";
-    onImportDone({
-      added:   Math.floor(Math.random() * 20) + 5,
-      skipped: Math.floor(Math.random() * 5),
-      failed:  Math.random() > 0.8 ? Math.floor(Math.random() * 3) : 0,
-    });
-  };
-
-  return (
-    <div style={S.section}>
-
-      {/* معلومات */}
-      <div style={S.sectionInfo}>
-        <div style={S.sectionIcon}>{section.icon}</div>
-        <div>
-          <div style={S.sectionLabel}>{section.label}</div>
-          <div style={S.sectionCount}>{counts[section.id]} عنصر في النظام</div>
-        </div>
-      </div>
-
-      {/* أزرار */}
-      <div style={S.sectionActions}>
-
-        {/* Export */}
-        <button
-          style={S.exportBtn}
-          onClick={() => onExportClick(section)}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#F5C840"; e.currentTarget.style.color = "#F5C840"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#2E5FA8"; e.currentTarget.style.color = "#A8C4E8"; }}
-        >
-          تصدير
-        </button>
-
-        {/* Import */}
-        <button
-          style={{
-            ...S.importBtn,
-            opacity: loading === "import" ? 0.6 : 1,
-            cursor:  loading === "import" ? "wait" : "pointer",
-          }}
-          onClick={() => !loading && fileRef.current?.click()}
-          onMouseEnter={(e) => { if (!loading) { e.currentTarget.style.opacity = "0.88"; } }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = loading ? "0.6" : "1"; }}
-          onMouseDown={(e) => { if (!loading) e.currentTarget.style.transform = "scale(0.97)"; }}
-          onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-        >
-          {loading === "import" ? "جار الاستيراد..." : "استيراد"}
-        </button>
-
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json,.xlsx,.xls,.csv"
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
-      </div>
-
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
-// الصفحة الرئيسية
-// ════════════════════════════════════════════════════════════
-const SECTIONS = [
-  { id: "questions",  label: "الأسئلة",     icon: "Q" },
-  { id: "categories", label: "التصنيفات",   icon: "C" },
-  { id: "users",      label: "المستخدمين",  icon: "U" },
-  { id: "contests",   label: "المسابقات",   icon: "M" },
-];
 
 export default function ImportExportPage() {
-  const [exportTarget,  setExportTarget]  = useState(null); // section object
-  const [importResult,  setImportResult]  = useState(null); // { added, skipped, failed }
+  const fileInputRef = useRef(null);
 
-  const handleExport = (format) => {
-    // محاكاة التصدير — تُستبدل بالمنطق الحقيقي عند ربط Firestore
-    const filename = `${exportTarget.id}_export_${Date.now()}.${format === "excel" ? "xlsx" : "json"}`;
-    const blob = new Blob(
-      [JSON.stringify({ type: exportTarget.id, exportedAt: new Date().toISOString(), data: [] }, null, 2)],
-      { type: "application/json" }
-    );
-    const url = URL.createObjectURL(blob);
-    const a   = document.createElement("a");
-    a.href     = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExportTarget(null);
+  const [counts, setCounts] = useState({ questions: 0, categories: 0, users: 0, contests: 0 });
+  const [loadingCounts, setLoadingCounts] = useState(true);
+
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(null); // { done, total }
+  const [importResult, setImportResult] = useState(null);
+
+  const loadCounts = useCallback(async () => {
+    setLoadingCounts(true);
+    try {
+      const [q, c, u, ct] = await Promise.all([
+        getQuestions(),
+        getCategories(),
+        getAllUsers(),
+        getAllContestsAdmin(),
+      ]);
+      setCounts({
+        questions: q.length,
+        categories: c.length,
+        users: u.length,
+        contests: ct.length,
+      });
+    } catch {
+      // مش حرج — الأرقام دي عرض بس
+    } finally {
+      setLoadingCounts(false);
+    }
+  }, []);
+
+  useEffect(() => { loadCounts(); }, [loadCounts]);
+
+  // ── تصدير ─────────────────────────────────────────────────
+  const handleExport = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      const questions = await getQuestions();
+      // بنشيل الحقول اللي الباك اند بيولّدها لوحده عشان الملف يبقى صالح لإعادة الاستيراد
+      const exportable = questions.map((q) => ({
+        description: q.description,
+        question_type: q.question_type,
+        tags: (q.tags || []).map((t) => t.category_type || t),
+        choices: (q.choices || []).map((c) => ({
+          description: c.description,
+          status: !!c.status,
+        })),
+      }));
+      const blob = new Blob([JSON.stringify(exportable, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `quizify-questions-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تصدير الأسئلة");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ── استيراد ───────────────────────────────────────────────
+  const handleFilePicked = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // يسمح باختيار نفس الملف تانى لو حابب يعيد المحاولة
+    if (!file) return;
+
+    setError("");
+    let parsed;
+    try {
+      const text = await file.text();
+      parsed = JSON.parse(text);
+    } catch {
+      setError("الملف مش JSON صالح");
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      setError("محتوى الملف لازم يكون مصفوفة (array) من الأسئلة");
+      return;
+    }
+    if (parsed.length === 0) {
+      setError("الملف فاضى، مفيش أسئلة للاستيراد");
+      return;
+    }
+
+    setImporting(true);
+    setImportProgress({ done: 0, total: parsed.length });
+    let added = 0;
+    const failed = [];
+
+    for (let i = 0; i < parsed.length; i++) {
+      const q = parsed[i];
+      try {
+        if (!q.description || !q.question_type) {
+          throw new Error("ناقصه description أو question_type");
+        }
+        await createQuestion({
+          description: q.description,
+          question_type: q.question_type,
+          tags: q.tags || [],
+          choices: q.choices || [],
+        });
+        added++;
+      } catch (err) {
+        failed.push({
+          index: i,
+          message: err.response?.data?.message || err.message || "خطأ غير معروف",
+        });
+      }
+      setImportProgress({ done: i + 1, total: parsed.length });
+    }
+
+    setImporting(false);
+    setImportProgress(null);
+    setImportResult({ added, failed });
+    loadCounts();
   };
 
   return (
@@ -256,52 +200,85 @@ export default function ImportExportPage() {
 
         <div style={S.inner}>
 
-          {/* ── الهيدر ── */}
-          <div style={S.pageHeader}>
-            <span style={S.pageTitle}>استيراد وتصدير</span>
+          <div style={S.header}>
+            <span style={S.headerText}>استيراد وتصدير الأسئلة</span>
           </div>
 
-          {/* ── ملاحظة ── */}
-          <div style={S.noteBox}>
-            عند الاستيراد: العناصر الموجودة مسبقاً في النظام يتم تجاهلها والإبقاء عليها كما هي. العناصر الجديدة فقط هي التي تُضاف.
-          </div>
+          {error && <div style={S.errorBox}>{error}</div>}
 
-          {/* ── السيكشنز ── */}
-          <div style={S.sectionsGrid}>
-            {SECTIONS.map((sec) => (
-              <DataSection
-                key={sec.id}
-                section={sec}
-                counts={MOCK_COUNTS}
-                onExportClick={(s) => setExportTarget(s)}
-                onImportDone={(result) => setImportResult(result)}
-              />
+          {/* ── ملخص البيانات الحالية ── */}
+          <div style={S.statsRow}>
+            {[
+              { label: "الأسئلة", value: counts.questions },
+              { label: "التصنيفات", value: counts.categories },
+              { label: "المستخدمون", value: counts.users },
+              { label: "المسابقات", value: counts.contests },
+            ].map((s) => (
+              <div key={s.label} style={S.statCard}>
+                <div style={S.statValue}>{loadingCounts ? "…" : s.value}</div>
+                <div style={S.statLabel}>{s.label}</div>
+              </div>
             ))}
+          </div>
+
+          {/* ── تصدير ── */}
+          <div style={S.card}>
+            <div style={S.cardTitle}>تصدير بنك الأسئلة</div>
+            <p style={S.cardDesc}>
+              بيصدّر كل الأسئلة الموجودة فى البنك (بنصها، نوعها، تصنيفاتها، واختياراتها) كملف JSON واحد — مناسب للنسخ الاحتياطى أو نقل الأسئلة بين مشروعين.
+            </p>
+            <button style={{ ...S.primaryBtn, opacity: exporting ? 0.6 : 1 }} onClick={handleExport} disabled={exporting}>
+              {exporting ? "جارِ التصدير..." : "⬇ تصدير كل الأسئلة (JSON)"}
+            </button>
+          </div>
+
+          {/* ── استيراد ── */}
+          <div style={S.card}>
+            <div style={S.cardTitle}>استيراد أسئلة</div>
+            <p style={S.cardDesc}>
+              بيقرأ ملف JSON (بنفس شكل ملف التصدير) ويضيف كل سؤال فيه للبنك سؤال سؤال. لازم كل تصنيف (tag) مذكور فى الملف يكون موجود بالفعل فى صفحة التصنيفات، وإلا هيفشل السؤال ده بس ويكمل الباقى.
+            </p>
+
+            {importing && importProgress ? (
+              <div style={S.progressWrap}>
+                <div style={S.progressTrack}>
+                  <div
+                    style={{
+                      ...S.progressFill,
+                      width: `${Math.round((importProgress.done / importProgress.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span style={S.progressText}>
+                  جارِ الاستيراد... {importProgress.done} / {importProgress.total}
+                </span>
+              </div>
+            ) : (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={handleFilePicked}
+                />
+                <button style={S.primaryBtn} onClick={() => fileInputRef.current?.click()}>
+                  ⬆ اختيار ملف JSON للاستيراد
+                </button>
+              </>
+            )}
           </div>
 
         </div>
       </div>
 
-      {exportTarget && (
-        <ExportFormatModal
-          section={exportTarget}
-          onExport={handleExport}
-          onClose={() => setExportTarget(null)}
-        />
-      )}
-
       {importResult && (
-        <ImportResultModal
-          result={importResult}
-          onClose={() => setImportResult(null)}
-        />
+        <ImportResultModal result={importResult} onClose={() => setImportResult(null)} />
       )}
     </>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// الستايلز
 // ════════════════════════════════════════════════════════════
 const S = {
   root: {
@@ -311,7 +288,7 @@ const S = {
     fontFamily: "'Cairo', sans-serif",
     position: "relative",
     overflow: "hidden",
-    paddingBottom: "60px",
+    paddingBottom: "48px",
   },
   dots: {
     position: "absolute",
@@ -324,124 +301,132 @@ const S = {
     position: "absolute",
     top: "50%",
     left: "50%",
-    transform: "translate(-50%,-50%)",
+    transform: "translate(-50%, -50%)",
     width: "700px",
     height: "700px",
-    background: "radial-gradient(ellipse, rgba(245,200,64,0.05) 0%, transparent 65%)",
+    background: "radial-gradient(ellipse, rgba(245,200,64,0.06) 0%, transparent 65%)",
     pointerEvents: "none",
   },
   inner: {
     position: "relative",
     zIndex: 1,
-    maxWidth: "700px",
+    maxWidth: "760px",
     margin: "0 auto",
     padding: "40px 28px 0",
   },
 
-  pageHeader: {
-    marginBottom: "24px",
+  header: {
+    background: "linear-gradient(145deg, #E8A020, #F5C840, #E8A020)",
+    borderRadius: "18px",
+    padding: "20px 32px",
+    textAlign: "center",
+    boxShadow: "0 6px 0 #B87A10",
+    marginBottom: "28px",
   },
-  pageTitle: {
+  headerText: {
     fontFamily: "'Lemonada', cursive",
     fontSize: "22px",
     fontWeight: 700,
-    color: "#F5C840",
+    color: "#1A2A00",
   },
 
-  noteBox: {
-    background: "rgba(245,200,64,.07)",
-    border: "1px solid rgba(245,200,64,.2)",
-    borderRadius: "10px",
-    padding: "12px 16px",
-    color: "#A8C4E8",
+  errorBox: {
+    background: "rgba(210,70,70,0.1)",
+    border: "1px solid rgba(210,70,70,0.3)",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    color: "#E07878",
     fontSize: "13px",
-    lineHeight: 1.7,
-    marginBottom: "24px",
+    lineHeight: 1.6,
+    marginBottom: "20px",
   },
 
-  sectionsGrid: {
-    display: "flex",
-    flexDirection: "column",
+  statsRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
     gap: "12px",
+    marginBottom: "20px",
+  },
+  statCard: {
+    background: "#162E58",
+    border: "1.5px solid #2E5FA8",
+    borderRadius: "12px",
+    padding: "16px 10px",
+    textAlign: "center",
+    boxShadow: "0 3px 0 #0A1A38",
+  },
+  statValue: {
+    fontSize: "26px",
+    fontWeight: 900,
+    color: "#F5C840",
+    lineHeight: 1,
+  },
+  statLabel: {
+    fontSize: "11px",
+    color: "#A8C4E8",
+    marginTop: "6px",
+    fontWeight: 600,
   },
 
-  // سيكشن
-  section: {
+  card: {
     background: "#162E58",
     border: "1.5px solid #2E5FA8",
     borderRadius: "14px",
-    padding: "20px 24px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "16px",
+    padding: "24px 22px",
+    boxShadow: "0 4px 0 #0A1A38",
+    marginBottom: "18px",
   },
-  sectionInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-    flex: 1,
-  },
-  sectionIcon: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "10px",
-    background: "rgba(245,200,64,.1)",
-    border: "1.5px solid rgba(245,200,64,.25)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#F5C840",
-    fontSize: "16px",
-    fontWeight: 900,
-    flexShrink: 0,
-  },
-  sectionLabel: {
-    color: "#FFFFFF",
+  cardTitle: {
     fontSize: "15px",
+    color: "#FFFFFF",
     fontWeight: 800,
-    marginBottom: "3px",
+    marginBottom: "10px",
   },
-  sectionCount: {
-    color: "#6A90B8",
-    fontSize: "12px",
-    fontWeight: 600,
-  },
-  sectionActions: {
-    display: "flex",
-    gap: "8px",
-    flexShrink: 0,
-  },
-
-  exportBtn: {
-    background: "transparent",
-    border: "1px solid #2E5FA8",
-    borderRadius: "8px",
-    padding: "9px 20px",
+  cardDesc: {
     color: "#A8C4E8",
     fontSize: "13px",
-    fontWeight: 700,
-    fontFamily: "'Cairo', sans-serif",
-    cursor: "pointer",
-    transition: "border-color 0.2s, color 0.2s",
-    whiteSpace: "nowrap",
+    lineHeight: 1.8,
+    margin: "0 0 18px",
   },
-  importBtn: {
+
+  primaryBtn: {
     background: "linear-gradient(135deg, #E8A020, #F5C840)",
     border: "none",
-    borderRadius: "8px",
-    padding: "9px 20px",
+    borderRadius: "10px",
+    padding: "13px 26px",
     color: "#1A2A00",
-    fontSize: "13px",
+    fontSize: "14px",
     fontWeight: 900,
     fontFamily: "'Cairo', sans-serif",
     cursor: "pointer",
-    transition: "opacity 0.2s, transform 0.1s",
-    boxShadow: "0 3px 0 #B87A10",
-    whiteSpace: "nowrap",
+    boxShadow: "0 4px 0 #B87A10",
   },
 
-  // Modals
+  progressWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+  progressTrack: {
+    background: "#0F2040",
+    borderRadius: "6px",
+    height: "10px",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: "6px",
+    background: "linear-gradient(90deg, #E8A020, #F5C840)",
+    transition: "width 0.2s ease",
+  },
+  progressText: {
+    color: "#A8C4E8",
+    fontSize: "12px",
+    fontWeight: 700,
+    textAlign: "center",
+  },
+
+  // ── Modal ──
   overlay: {
     position: "fixed",
     inset: 0,
@@ -487,20 +472,7 @@ const S = {
     padding: "16px 24px",
     borderTop: "1px solid #2E5FA8",
   },
-  cancelBtn: {
-    flex: 1,
-    background: "transparent",
-    border: "1px solid #2E5FA8",
-    borderRadius: "8px",
-    padding: "11px",
-    color: "#A8C4E8",
-    fontSize: "14px",
-    fontWeight: 700,
-    fontFamily: "'Cairo', sans-serif",
-    cursor: "pointer",
-  },
   saveBtn: {
-    flex: 2,
     background: "linear-gradient(135deg, #E8A020, #F5C840)",
     border: "none",
     borderRadius: "8px",
@@ -510,43 +482,13 @@ const S = {
     fontWeight: 900,
     fontFamily: "'Cairo', sans-serif",
     cursor: "pointer",
-    transition: "opacity 0.2s, transform 0.1s",
+    transition: "opacity 0.2s",
     boxShadow: "0 3px 0 #B87A10",
   },
 
-  // format options
-  formatOption: {
-    border: "1.5px solid",
-    borderRadius: "10px",
-    padding: "14px 16px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    cursor: "pointer",
-    transition: "border-color 0.2s, background 0.2s",
-  },
-  radio: {
-    width: "18px",
-    height: "18px",
-    borderRadius: "50%",
-    border: "2px solid",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    transition: "border-color 0.2s",
-  },
-  radioDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    background: "#F5C840",
-  },
-
-  // نتيجة الاستيراد
   resultGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "1fr 1fr",
     gap: "10px",
   },
   resultItem: {
@@ -556,15 +498,13 @@ const S = {
     textAlign: "center",
   },
   resultVal: {
-    fontSize: "28px",
+    fontSize: "26px",
     fontWeight: 900,
-    lineHeight: 1,
-    marginBottom: "4px",
   },
   resultLbl: {
     fontSize: "11px",
-    color: "#6A90B8",
-    fontWeight: 600,
+    color: "#A8C4E8",
+    marginTop: "4px",
   },
   infoBox: {
     background: "rgba(245,200,64,.08)",

@@ -1,113 +1,163 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { getCategories } from "../services/categoryService";
+import { getQuestions } from "../services/questionService";
+import {
+  getContestById,
+  getContestQuestions,
+  addQuestionToContest,
+  removeQuestionFromContest,
+  randomFillContest,
+} from "../services/contestService";
 
-// ════════════════════════════════════════════════════════════
-// بيانات تجريبية
-// ════════════════════════════════════════════════════════════
-const CATEGORIES = [
-  { id: "religious", name: "مناسبات دينية", color: "#E8A020" },
-  { id: "saints", name: "قديسين", color: "#4CAF82" },
-  { id: "absurd", name: "عبثيات", color: "#D4537E" },
-  { id: "football", name: "كورة", color: "#378ADD" },
-  { id: "geo", name: "جغرافيا", color: "#1D9E75" },
-  { id: "christian", name: "مسيحية", color: "#7F77DD" },
-  { id: "math", name: "ماث وألغاز", color: "#D85A30" },
-  { id: "tech", name: "تكنولوجيا وعلوم", color: "#5DCAA5" },
-];
+const CAT_COLORS = ["#E8A020", "#4CAF82", "#D4537E", "#378ADD", "#1D9E75", "#7F77DD", "#D85A30", "#5DCAA5"];
 
-const ALL_QUESTIONS = [
-  { id: "q1", categoryId: "religious", text: "ما هو اسم العيد الذى يسبق عيد القيامة بأسبوع؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q2", categoryId: "religious", text: "فى أى شهر يقع عيد الميلاد المجيد فى التقويم القبطى؟", hasImage: true, hasOptions: true, usedBefore: true, lastUsedAt: "2026-04-10" },
-  { id: "q3", categoryId: "religious", text: "كم عدد أيام الصوم الكبير؟", hasImage: false, hasOptions: false, usedBefore: false },
-  { id: "q4", categoryId: "religious", text: "ما اسم القنديل المستخدم فى احتفالات سبت النور؟", hasImage: true, hasOptions: false, usedBefore: false },
-  { id: "q5", categoryId: "saints", text: "من هو القديس المعروف بـ صاحب العمود؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q6", categoryId: "saints", text: "فى أى مدينة عاش القديس أنطونيوس الكبير؟", hasImage: true, hasOptions: true, usedBefore: true, lastUsedAt: "2026-03-22" },
-  { id: "q7", categoryId: "saints", text: "ما هو لقب القديسة مارينا؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q8", categoryId: "football", text: "من الفريق الحائز على أكبر عدد من كؤوس دورى أبطال أوروبا؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q9", categoryId: "football", text: "فى أى عام استضافت مصر كأس الأمم الأفريقية لكرة القدم آخر مرة؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q10", categoryId: "football", text: "حدد اسم اللاعب فى الصورة", hasImage: true, hasOptions: true, usedBefore: false },
-  { id: "q11", categoryId: "geo", text: "ما أطول نهر فى قارة أفريقيا؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q12", categoryId: "geo", text: "حدد اسم هذا المعلم السياحى من الصورة", hasImage: true, hasOptions: false, usedBefore: true, lastUsedAt: "2026-05-01" },
-  { id: "q13", categoryId: "christian", text: "ما اسم آخر كتاب فى العهد الجديد؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q14", categoryId: "christian", text: "من كاتب سفر الرؤيا؟", hasImage: false, hasOptions: false, usedBefore: false },
-  { id: "q15", categoryId: "math", text: "ما هو العدد الذى إذا ضربته فى نفسه يساوى 144؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q16", categoryId: "math", text: "أكمل المتسلسلة: 2، 4، 8، 16، ...", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q17", categoryId: "tech", text: "من مؤسس شركة مايكروسوفت؟", hasImage: false, hasOptions: true, usedBefore: false },
-  { id: "q18", categoryId: "tech", text: "ما اسم أول قمر صناعى تم إطلاقه فى التاريخ؟", hasImage: true, hasOptions: true, usedBefore: false },
-  { id: "q19", categoryId: "absurd", text: "لو الفيل اتكلم عربى هيقول إيه أول ما يصحى؟", hasImage: false, hasOptions: false, usedBefore: false },
-  { id: "q20", categoryId: "absurd", text: "ما هو أغرب طبق ممكن تتخيل وجوده على فطار مصرى؟", hasImage: false, hasOptions: false, usedBefore: false },
-];
-
-const formatDate = (iso) =>
-  new Date(iso).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" });
+const TYPE_LABELS = {
+  singleChoice: "اختيار واحد",
+  multiChoice:  "اختيار متعدد",
+  openEnded:    "إجابة مفتوحة",
+};
 
 export default function ManualSelectionPage() {
-  const TOTAL_REQUIRED = 12; // قادم من شاشة إنشاء المسابقة
+  const [searchParams] = useSearchParams();
+  const contestId = searchParams.get("contestId");
+  const navigate = useNavigate();
 
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].id);
+  const [contest, setContest] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [activeCategory, setActiveCategory] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all"); // all | unused | withImages | withOptions
-  const [selectedIds, setSelectedIds] = useState(new Set());
-  const [selectedByCategory, setSelectedByCategory] = useState({}); // categoryId -> count
-  const [zoomImage, setZoomImage] = useState(null);
+  const [filterType, setFilterType] = useState("all");
 
-  // ── الأسئلة المعروضة بعد الفلترة والبحث (داخل التصنيف الحالى فقط) ──
-  const visibleQuestions = useMemo(() => {
-    let list = ALL_QUESTIONS.filter((q) => q.categoryId === activeCategory);
+  const [bankQuestions, setBankQuestions] = useState([]);
+  const [contestQuestions, setContestQuestions] = useState([]);
 
-    if (search.trim().length > 0) {
-      list = list.filter((q) => q.text.includes(search.trim()));
+  const [loadingBank, setLoadingBank] = useState(false);
+  const [loadingSelected, setLoadingSelected] = useState(true);
+  const [busyId, setBusyId] = useState(null); // question_id بيتحدّث دلوقتي
+  const [error, setError] = useState("");
+
+  const [randomCount, setRandomCount] = useState(10);
+  const [randomBusy, setRandomBusy] = useState(false);
+
+  // ── تحميل بيانات المسابقة + التصنيفات + الأسئلة المختارة فعلاً ──
+  const loadSelected = useCallback(async () => {
+    if (!contestId) {
+      setError("لا يوجد معرّف مسابقة (contestId) فى الرابط");
+      setLoadingSelected(false);
+      return;
     }
-
-    if (filter === "unused") list = list.filter((q) => !q.usedBefore);
-    if (filter === "withImages") list = list.filter((q) => q.hasImage);
-    if (filter === "withOptions") list = list.filter((q) => q.hasOptions);
-
-    return list;
-  }, [activeCategory, search, filter]);
-
-  const selectedCount = selectedIds.size;
-  const remainingCount = Math.max(TOTAL_REQUIRED - selectedCount, 0);
-
-  // ── ألوان شريط التقدم حسب التصنيفات المختارة ──────────────
-  const progressSegments = useMemo(() => {
-    const total = Object.values(selectedByCategory).reduce((a, b) => a + b, 0);
-    if (total === 0) return [];
-    return Object.entries(selectedByCategory)
-      .filter(([, count]) => count > 0)
-      .map(([catId, count]) => {
-        const cat = CATEGORIES.find((c) => c.id === catId);
-        return { color: cat?.color || "#A8C4E8", percent: (count / TOTAL_REQUIRED) * 100 };
-      });
-  }, [selectedByCategory]);
-
-  // ── تبديل اختيار سؤال ──────────────────────────────────────
-  const toggleQuestion = (q) => {
-    const newSelected = new Set(selectedIds);
-    const newByCategory = { ...selectedByCategory };
-
-    if (newSelected.has(q.id)) {
-      newSelected.delete(q.id);
-      newByCategory[q.categoryId] = Math.max((newByCategory[q.categoryId] || 1) - 1, 0);
-    } else {
-      if (selectedCount >= TOTAL_REQUIRED) return; // اكتمل العدد
-      newSelected.add(q.id);
-      newByCategory[q.categoryId] = (newByCategory[q.categoryId] || 0) + 1;
+    setLoadingSelected(true);
+    setError("");
+    try {
+      const [c, list] = await Promise.all([
+        getContestById(contestId),
+        getContestQuestions(contestId),
+      ]);
+      setContest(c);
+      setContestQuestions(list);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحميل بيانات المسابقة");
+    } finally {
+      setLoadingSelected(false);
     }
+  }, [contestId]);
 
-    setSelectedIds(newSelected);
-    setSelectedByCategory(newByCategory);
+  useEffect(() => {
+    getCategories()
+      .then((list) => {
+        setCategories(list.map((c) => ({ id: c.category_id, name: c.category_type })));
+        if (list.length > 0) setActiveCategory((prev) => prev || list[0].category_type);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadSelected();
+  }, [loadSelected]);
+
+  // ── تحميل بنك الأسئلة الخاص بالتصنيف الحالى (من السيرفر) ──
+  const loadBank = useCallback(async () => {
+    if (!activeCategory) return;
+    setLoadingBank(true);
+    try {
+      const filters = { category: activeCategory };
+      if (search.trim()) filters.search = search.trim();
+      if (filterType !== "all") filters.question_type = filterType;
+      const list = await getQuestions(filters);
+      setBankQuestions(list);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحميل الأسئلة");
+    } finally {
+      setLoadingBank(false);
+    }
+  }, [activeCategory, search, filterType]);
+
+  useEffect(() => {
+    const t = setTimeout(loadBank, search ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [loadBank, search]);
+
+  const selectedIds = useMemo(
+    () => new Set(contestQuestions.map((q) => q.question_id)),
+    [contestQuestions]
+  );
+
+  const selectedByCategory = useMemo(() => {
+    const map = {};
+    for (const q of contestQuestions) {
+      for (const t of q.tags || []) {
+        const name = t.category_type || t;
+        map[name] = (map[name] || 0) + 1;
+      }
+    }
+    return map;
+  }, [contestQuestions]);
+
+  // ── إضافة/إزالة سؤال ─────────────────────────────────────
+  const toggleQuestion = async (q) => {
+    setBusyId(q.question_id);
+    setError("");
+    try {
+      if (selectedIds.has(q.question_id)) {
+        await removeQuestionFromContest(contestId, q.question_id);
+      } else {
+        const nextOrder = contestQuestions.length + 1;
+        await addQuestionToContest(contestId, q.question_id, nextOrder);
+      }
+      await loadSelected();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحديث السؤال");
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  // ── اختيار سؤال عشوائى من التصنيف الحالى ──────────────────
+  // ── اختيار سؤال عشوائى من البنك المعروض حالياً ────────────
   const pickRandomFromCategory = () => {
-    const candidates = visibleQuestions.filter((q) => !selectedIds.has(q.id));
+    const candidates = bankQuestions.filter((q) => !selectedIds.has(q.question_id));
     if (candidates.length === 0) return;
     const randomQ = candidates[Math.floor(Math.random() * candidates.length)];
     toggleQuestion(randomQ);
   };
 
+  // ── ملء عشوائى كامل (بيستبدل كل أسئلة المسابقة الحالية) ───
+  const handleRandomFill = async () => {
+    if (!window.confirm(`هيتم استبدال كل الأسئلة المختارة حالياً (${contestQuestions.length}) بـ ${randomCount} سؤال عشوائى. متأكد؟`)) return;
+    setRandomBusy(true);
+    setError("");
+    try {
+      await randomFillContest(contestId, Number(randomCount));
+      await loadSelected();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تنفيذ الاختيار العشوائى — تأكد إن عدد الأسئلة المتاحة كافى");
+    } finally {
+      setRandomBusy(false);
+    }
+  };
+
   const handleFinish = () => {
-    console.log("navigate → /competitions/new/shuffle-preview", { selectedIds: Array.from(selectedIds) });
+    navigate(`/playback/${contestId}`);
   };
 
   return (
@@ -119,63 +169,71 @@ export default function ManualSelectionPage() {
       <div style={S.root}>
         <div style={S.dots} />
 
-        {/* ── الهيدر ── */}
         <header style={S.header}>
           <div style={S.headerInner}>
             <div style={S.logo}>أنت ونصيبك</div>
-            <button style={S.backBtn} onClick={() => console.log("navigate → /competitions/new")}>
-              رجوع
-            </button>
+            <button style={S.backBtn} onClick={() => navigate("/")}>رجوع</button>
           </div>
         </header>
 
         <main style={S.main}>
-          <h1 style={S.pageTitle}>اختيار الأسئلة</h1>
+          <h1 style={S.pageTitle}>
+            اختيار الأسئلة {contest ? `— ${contest.contest_name}` : ""}
+          </h1>
 
-          {/* ── شريط التقدم ── */}
+          {error && <div style={S.errorBox}>{error}</div>}
+
+          {/* ── ملخص + أداة الملء العشوائى ── */}
           <div style={S.progressBox}>
             <div style={S.progressStats}>
               <span style={S.progressStatItem}>
-                <span style={S.progressNum}>{TOTAL_REQUIRED}</span> مطلوب
-              </span>
-              <span style={S.progressStatItem}>
-                <span style={{ ...S.progressNum, color: "#F5C840" }}>{selectedCount}</span> مختار
-              </span>
-              <span style={S.progressStatItem}>
-                <span style={{ ...S.progressNum, color: "#A8C4E8" }}>{remainingCount}</span> متبقى
+                <span style={{ ...S.progressNum, color: "#F5C840" }}>{contestQuestions.length}</span> سؤال مختار حالياً
               </span>
             </div>
-            <div style={S.progressTrack}>
-              {progressSegments.length === 0 ? (
-                <div style={S.progressEmptyFill} />
-              ) : (
-                progressSegments.map((seg, i) => (
-                  <div key={i} style={{ height: "100%", width: `${seg.percent}%`, background: seg.color }} />
-                ))
-              )}
+
+            <div style={S.randomFillRow}>
+              <span style={S.randomFillLabel}>ملء عشوائى كامل:</span>
+              <input
+                type="number"
+                min={1}
+                value={randomCount}
+                onChange={(e) => setRandomCount(e.target.value)}
+                style={S.randomCountInput}
+              />
+              <button
+                style={{ ...S.randomFillBtn, opacity: randomBusy ? 0.6 : 1 }}
+                onClick={handleRandomFill}
+                disabled={randomBusy}
+              >
+                {randomBusy ? "جارٍ التنفيذ..." : "استبدال كل الأسئلة عشوائياً"}
+              </button>
+            </div>
+            <div style={S.randomFillNote}>
+              ⚠️ العملية دى بتستبدل كل الأسئلة المختارة حالياً بأسئلة عشوائية جديدة من كل التصنيفات — مش بتضيف فوق الموجود.
             </div>
           </div>
 
           {/* ── شريط التصنيفات ── */}
           <div style={S.categoryBar}>
-            {CATEGORIES.map((cat) => {
-              const count = selectedByCategory[cat.id] || 0;
-              const active = activeCategory === cat.id;
+            {categories.map((cat, i) => {
+              const count = selectedByCategory[cat.name] || 0;
+              const active = activeCategory === cat.name;
+              const color = CAT_COLORS[i % CAT_COLORS.length];
               return (
                 <button
                   key={cat.id}
                   style={{
                     ...S.categoryChip,
-                    borderColor: active ? cat.color : "#2E5FA8",
-                    background: active ? `${cat.color}1A` : "#162E58",
+                    borderColor: active ? color : "#2E5FA8",
+                    background: active ? `${color}1A` : "#162E58",
                   }}
-                  onClick={() => setActiveCategory(cat.id)}
+                  onClick={() => setActiveCategory(cat.name)}
                 >
-                  <span style={{ color: active ? cat.color : "#FFFFFF", fontWeight: active ? 800 : 600 }}>
+                  <span style={{ color: active ? color : "#FFFFFF", fontWeight: active ? 800 : 600 }}>
                     {cat.name}
                   </span>
                   {count > 0 && (
-                    <span style={{ ...S.categoryChipCount, background: cat.color }}>{count}</span>
+                    <span style={{ ...S.categoryChipCount, background: color }}>{count}</span>
                   )}
                 </button>
               );
@@ -191,15 +249,9 @@ export default function ManualSelectionPage() {
               placeholder="بحث داخل هذا التصنيف..."
               style={S.searchInput}
             />
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              style={S.filterSelect}
-            >
-              <option value="all">كل الأسئلة</option>
-              <option value="unused">غير مستخدمة سابقاً</option>
-              <option value="withImages">تحتوى على صور</option>
-              <option value="withOptions">تحتوى على اختيارات</option>
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={S.filterSelect}>
+              <option value="all">كل الأنواع</option>
+              {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             <button style={S.randomBtn} onClick={pickRandomFromCategory}>
               اختيار سؤال عشوائى من التصنيف الحالى
@@ -207,55 +259,44 @@ export default function ManualSelectionPage() {
           </div>
 
           {/* ── شبكة الأسئلة ── */}
-          {visibleQuestions.length === 0 ? (
+          {loadingBank ? (
+            <div style={{ color: "#6A90B8", padding: "20px 0" }}>جارِ التحميل...</div>
+          ) : bankQuestions.length === 0 ? (
             <div style={S.empty}>لا توجد أسئلة مطابقة فى هذا التصنيف</div>
           ) : (
             <div style={S.questionsGrid}>
-              {visibleQuestions.map((q) => {
-                const isSelected = selectedIds.has(q.id);
+              {bankQuestions.map((q) => {
+                const isSelected = selectedIds.has(q.question_id);
+                const isBusy = busyId === q.question_id;
                 return (
                   <div
-                    key={q.id}
+                    key={q.question_id}
                     style={{
                       ...S.qCard,
                       borderColor: isSelected ? "#F5C840" : "#2E5FA8",
                       background: isSelected ? "rgba(245,200,64,0.06)" : "#162E58",
                     }}
                   >
-                    {q.hasImage && (
-                      <div
-                        style={S.qThumb}
-                        onClick={(e) => { e.stopPropagation(); setZoomImage(q.id); }}
-                      >
-                        صورة
-                      </div>
-                    )}
-
-                    <div style={S.qText}>{q.text}</div>
+                    <div style={S.qText}>{q.description}</div>
 
                     <div style={S.qMetaRow}>
-                      {q.hasOptions ? (
-                        <span style={S.qBadge}>اختيارى</span>
-                      ) : (
-                        <span style={{ ...S.qBadge, color: "#6A90B8" }}>بدون اختيارات</span>
+                      <span style={S.qBadge}>{TYPE_LABELS[q.question_type] || q.question_type}</span>
+                      {q.choices?.length > 0 && (
+                        <span style={{ ...S.qBadge, color: "#6A90B8" }}>{q.choices.length} اختيارات</span>
                       )}
                     </div>
-
-                    {q.usedBefore && (
-                      <div style={S.usedWarning}>
-                        تم استخدام هذا السؤال مسبقاً — آخر استخدام {formatDate(q.lastUsedAt)}
-                      </div>
-                    )}
 
                     <button
                       style={{
                         ...S.selectBtn,
                         ...(isSelected ? S.selectBtnActive : {}),
+                        opacity: isBusy ? 0.6 : 1,
+                        cursor: isBusy ? "not-allowed" : "pointer",
                       }}
                       onClick={() => toggleQuestion(q)}
-                      disabled={!isSelected && selectedCount >= TOTAL_REQUIRED}
+                      disabled={isBusy}
                     >
-                      {isSelected ? "إزالة من المسابقة" : "إضافة للمسابقة"}
+                      {isBusy ? "جارٍ التحديث..." : isSelected ? "إزالة من المسابقة" : "إضافة للمسابقة"}
                     </button>
                   </div>
                 );
@@ -267,28 +308,21 @@ export default function ManualSelectionPage() {
         {/* ── شريط سفلى ثابت ── */}
         <div style={S.bottomBar}>
           <span style={S.bottomBarText}>
-            {selectedCount} من {TOTAL_REQUIRED} سؤال مختار
+            {loadingSelected ? "جارِ التحميل..." : `${contestQuestions.length} سؤال مختار فى المسابقة`}
           </span>
           <button
             style={{
               ...S.finishBtn,
-              opacity: selectedCount === TOTAL_REQUIRED ? 1 : 0.5,
-              cursor: selectedCount === TOTAL_REQUIRED ? "pointer" : "not-allowed",
+              opacity: contestQuestions.length === 0 ? 0.5 : 1,
+              cursor: contestQuestions.length === 0 ? "not-allowed" : "pointer",
             }}
             onClick={handleFinish}
-            disabled={selectedCount !== TOTAL_REQUIRED}
+            disabled={contestQuestions.length === 0}
           >
-            تأكيد الأسئلة المختارة
+            الانتقال لعرض المسابقة
           </button>
         </div>
       </div>
-
-      {/* ── تكبير الصورة (Placeholder بصرى) ── */}
-      {zoomImage && (
-        <div style={S.zoomOverlay} onClick={() => setZoomImage(null)}>
-          <div style={S.zoomBox}>صورة مكبّرة للسؤال</div>
-        </div>
-      )}
     </>
   );
 }
@@ -362,18 +396,31 @@ const S = {
     margin: "0 0 20px",
   },
 
-  // شريط التقدم
+  errorBox: {
+    background: "rgba(210,70,70,0.1)",
+    border: "1px solid rgba(210,70,70,0.3)",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    color: "#E07878",
+    fontSize: "13px",
+    marginBottom: "16px",
+    lineHeight: 1.6,
+  },
+
+  // شريط الملخص + الملء العشوائى
   progressBox: {
     background: "#162E58",
     border: "1.5px solid #2E5FA8",
     borderRadius: "12px",
     padding: "16px 20px",
     marginBottom: "20px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
   },
   progressStats: {
     display: "flex",
     gap: "24px",
-    marginBottom: "12px",
     fontSize: "13px",
     color: "#A8C4E8",
   },
@@ -387,17 +434,43 @@ const S = {
     fontWeight: 800,
     color: "#FFFFFF",
   },
-  progressTrack: {
-    width: "100%",
-    height: "8px",
-    background: "rgba(255,255,255,0.08)",
-    borderRadius: "4px",
-    overflow: "hidden",
+  randomFillRow: {
     display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
   },
-  progressEmptyFill: {
-    width: "0%",
-    height: "100%",
+  randomFillLabel: {
+    color: "#A8C4E8",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+  randomCountInput: {
+    width: "70px",
+    background: "#0F2040",
+    border: "1.5px solid #2E5FA8",
+    borderRadius: "6px",
+    padding: "7px 10px",
+    color: "#FFFFFF",
+    fontSize: "13px",
+    fontFamily: "'Cairo', sans-serif",
+    outline: "none",
+  },
+  randomFillBtn: {
+    background: "linear-gradient(135deg, #E8A020, #F5C840)",
+    border: "none",
+    borderRadius: "7px",
+    padding: "8px 16px",
+    color: "#1A2A00",
+    fontSize: "12px",
+    fontWeight: 800,
+    fontFamily: "'Cairo', sans-serif",
+    cursor: "pointer",
+  },
+  randomFillNote: {
+    color: "#F5C840",
+    fontSize: "11px",
+    lineHeight: 1.6,
   },
 
   // شريط التصنيفات
@@ -496,19 +569,6 @@ const S = {
     gap: "10px",
     transition: "border-color 0.2s, background 0.2s",
   },
-  qThumb: {
-    width: "100%",
-    height: "90px",
-    background: "#0F2040",
-    border: "1px solid #2E5FA8",
-    borderRadius: "8px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#5A80A8",
-    fontSize: "12px",
-    cursor: "zoom-in",
-  },
   qText: {
     color: "#FFFFFF",
     fontSize: "14px",
@@ -518,6 +578,7 @@ const S = {
   qMetaRow: {
     display: "flex",
     gap: "8px",
+    flexWrap: "wrap",
   },
   qBadge: {
     fontSize: "11px",
@@ -525,15 +586,6 @@ const S = {
     background: "rgba(168,196,232,0.08)",
     borderRadius: "5px",
     padding: "3px 9px",
-  },
-  usedWarning: {
-    background: "rgba(245,200,64,0.1)",
-    border: "1px solid rgba(245,200,64,0.3)",
-    borderRadius: "6px",
-    padding: "8px 10px",
-    color: "#F5C840",
-    fontSize: "11.5px",
-    lineHeight: 1.6,
   },
   selectBtn: {
     background: "transparent",
@@ -583,29 +635,5 @@ const S = {
     fontWeight: 900,
     fontFamily: "'Cairo', sans-serif",
     transition: "opacity 0.2s",
-  },
-
-  // تكبير الصورة
-  zoomOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(8,16,32,0.85)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    cursor: "zoom-out",
-  },
-  zoomBox: {
-    width: "min(600px, 90vw)",
-    height: "min(450px, 70vh)",
-    background: "#162E58",
-    border: "1.5px solid #2E5FA8",
-    borderRadius: "12px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#5A80A8",
-    fontSize: "14px",
   },
 };

@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const { login, loading } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -17,8 +19,8 @@ export default function LoginPage() {
     setError("");
     try {
       // الباك اند يتحقق من البيانات ويرجّع الـ JWT، AuthContext بيخزنه
-      // وبعدها App.jsx بيتحول تلقائياً للصفحة الرئيسية لأن الـ user بقى موجود
       await login(email.trim(), password);
+      navigate("/", { replace: true });
     } catch (err) {
       const message =
         err.response?.data?.message || "حصل خطأ فى الاتصال بالسيرفر، حاول تانى";

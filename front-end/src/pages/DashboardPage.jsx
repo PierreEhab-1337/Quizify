@@ -1,31 +1,19 @@
-import { useState, useMemo } from "react";
-
-// ════════════════════════════════════════════════════════════
-// بيانات تجريبية (Mock Data) — سيتم استبدالها بـ Firebase لاحقاً
-// ════════════════════════════════════════════════════════════
-const MOCK = {
-  user: { name: "User1", isAdmin: false },
-  drafts: [
-    { id: 1, name: "اجتماع الجمعة", questionsCount: 8, totalQuestions: 12, updatedAt: "2026-06-20T14:30:00", inProgress: false },
-    { id: 2, name: "نشاط الشباب", questionsCount: 3, totalQuestions: 10, updatedAt: "2026-06-18T09:00:00", inProgress: false },
-    { id: 8, name: "اجتماع الإثنين", questionsCount: 12, totalQuestions: 12, updatedAt: "2026-06-22T11:00:00", inProgress: true },
-  ],
-  saved: [
-    { id: 3, name: "مسابقة رمضان", totalQuestions: 15, updatedAt: "2026-06-15T10:00:00" },
-    { id: 4, name: "اجتماع الأحد", totalQuestions: 12, updatedAt: "2026-06-10T16:20:00" },
-    { id: 5, name: "نشاط الأطفال", totalQuestions: 10, updatedAt: "2026-06-08T12:00:00" },
-  ],
-  completed: [
-    { id: 6, name: "مسابقة يناير", totalQuestions: 20, updatedAt: "2026-05-30T19:00:00" },
-    { id: 7, name: "اجتماع الجمعة - نسخة قديمة", totalQuestions: 12, updatedAt: "2026-05-20T18:00:00" },
-  ],
-};
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import {
+  getMyContests,
+  createContest,
+  deleteContest,
+  startContest,
+  getContestQuestions,
+} from "../services/contestService";
 
 const formatDate = (iso) =>
   new Date(iso).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" });
 
 const sortByLatest = (items) =>
-  [...items].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  [...items].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
 // ════════════════════════════════════════════════════════════
 // Modal تأكيد الحذف
@@ -64,7 +52,6 @@ function ConfirmDeleteModal({ item, onConfirm, onCancel }) {
 // ════════════════════════════════════════════════════════════
 function CompetitionCard({ item, type, onOpen, onPlay, onResume, onDeleteRequest }) {
   const [hover, setHover] = useState(false);
-  const progress = type === "draft" ? Math.round((item.questionsCount / item.totalQuestions) * 100) : null;
 
   return (
     <div
@@ -80,31 +67,20 @@ function CompetitionCard({ item, type, onOpen, onPlay, onResume, onDeleteRequest
       <div style={S.cardName}>{item.name}</div>
 
       <div style={S.cardMeta}>
-        <span>{type === "draft" ? `${item.questionsCount} من ${item.totalQuestions} سؤال` : `${item.totalQuestions} سؤال`}</span>
+        <span>{item.questionsCount} سؤال</span>
         <span style={S.dot}>·</span>
-        <span>{formatDate(item.updatedAt)}</span>
+        <span>{formatDate(item.created_at)}</span>
       </div>
 
-      {type === "draft" && (
-        <div style={S.progressTrack}>
-          <div style={{ ...S.progressFill, width: `${progress}%` }} />
-        </div>
-      )}
-
-      {type === "draft" && item.inProgress && (
-        <div style={S.pausedBadge}>متوقفة أثناء التشغيل</div>
-      )}
-
       <div style={S.cardActions}>
-        {type === "draft" && item.inProgress && (
-          <button style={S.btnPlay} onClick={() => onResume(item)}>استكمال التشغيل</button>
-        )}
-        {type === "draft" && !item.inProgress && (
+        {type === "draft" && (
           <button style={S.btnOpen} onClick={() => onOpen(item)}>استكمال التجهيز</button>
         )}
         {type === "saved" && (
           <>
-            <button style={S.btnPlay} onClick={() => onPlay(item)}>تشغيل</button>
+            <button style={S.btnPlay} onClick={() => onPlay(item)}>
+              {item.status === "inProgress" ? "استكمال التشغيل" : "تشغيل"}
+            </button>
             <button style={S.btnOpen} onClick={() => onOpen(item)}>تعديل</button>
           </>
         )}
@@ -158,39 +134,100 @@ function Section({ title, color, items, type, emptyMsg, onOpen, onPlay, onResume
 // الصفحة الرئيسية (لوحة المسابقات)
 // ════════════════════════════════════════════════════════════
 export default function DashboardPage() {
-  const { user, drafts, saved, completed } = MOCK;
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const [contests, setContests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // ── دوال تنقّل مؤقتة (Placeholders) ──────────────────────
-  // سيتم استبدالها بـ navigate() من React Router عند ربط الصفحات
-  const goToCreateCompetition = () => {
-    console.log("navigate → /competitions/new");
+  const isAdmin = user?.role === "admin";
+
+  const loadContests = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const list = await getMyContests();
+      // بنجيب عدد الأسئلة لكل مسابقة (الـ API الحالي مش بيرجّعه جوه القايمة نفسها)
+      const withCounts = await Promise.all(
+        list.map(async (c) => {
+          let questionsCount = 0;
+          try {
+            const qs = await getContestQuestions(c.contest_id);
+            questionsCount = qs.length;
+          } catch {
+            // تجاهل لو فشل حساب العدد لمسابقة معيّنة
+          }
+          return {
+            id: c.contest_id,
+            name: c.contest_name,
+            status: c.status,
+            created_at: c.created_at,
+            questionsCount,
+          };
+        })
+      );
+      setContests(withCounts);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحميل المسابقات");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadContests();
+  }, [loadContests]);
+
+  const drafts = contests.filter((c) => c.status === "draft");
+  const saved = contests.filter((c) => c.status === "saved" || c.status === "inProgress");
+  const completed = contests.filter((c) => c.status === "completed");
+
+  // ── التنقل ──────────────────────────────────────────────────
+  const goToCreateCompetition = async () => {
+    const name = window.prompt("اسم المسابقة الجديدة (يجب أن يكون فريداً):");
+    if (!name || !name.trim()) return;
+    try {
+      const created = await createContest(name.trim());
+      navigate(`/manual-selection?contestId=${created.contest_id}`);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر إنشاء المسابقة — تأكد أن الاسم غير مستخدم من قبل");
+    }
   };
-  const goToContinueDraft = (item) => {
-    console.log("navigate → /competitions/" + item.id + "/build");
+  const goToContinueDraft = (item) => navigate(`/manual-selection?contestId=${item.id}`);
+  const goToOpen = (item) => navigate(`/manual-selection?contestId=${item.id}`);
+  const goToAdminPanel = () => navigate("/admin/dashboard");
+
+  // "تشغيل" على مسابقة saved/completed، أو "استكمال" على واحدة inProgress بالفعل
+  const goToPlay = async (item) => {
+    try {
+      if (item.status !== "inProgress") {
+        await startContest(item.id);
+      }
+      navigate(`/playback/${item.id}`);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر بدء تشغيل المسابقة");
+    }
   };
-  const goToResumePlayback = (item) => {
-    console.log("navigate → /competitions/" + item.id + "/play?resume=true");
-  };
-  const goToPlay = (item) => {
-    console.log("navigate → /competitions/" + item.id + "/play");
-  };
-  const goToOpen = (item) => {
-    console.log("navigate → /competitions/" + item.id);
-  };
-  const goToAdminPanel = () => {
-    console.log("navigate → /admin/dashboard");
-  };
+
   const handleLogout = () => {
-    console.log("logout()");
+    logout();
+    navigate("/login", { replace: true });
   };
 
   // ── الحذف ─────────────────────────────────────────────────
   const requestDelete = (item) => setPendingDelete(item);
   const cancelDelete = () => setPendingDelete(null);
-  const confirmDelete = (item) => {
-    console.log("delete competition →", item.id);
-    setPendingDelete(null);
+  const confirmDelete = async (item) => {
+    try {
+      await deleteContest(item.id);
+      setContests((prev) => prev.filter((c) => c.id !== item.id));
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر حذف المسابقة");
+    } finally {
+      setPendingDelete(null);
+    }
   };
 
   return (
@@ -207,12 +244,12 @@ export default function DashboardPage() {
           <div style={S.headerInner}>
             <div style={S.logo}>أنت ونصيبك</div>
             <div style={S.headerRight}>
-              {user.isAdmin && (
+              {isAdmin && (
                 <button style={S.adminLink} onClick={goToAdminPanel}>
                   لوحة الإدارة
                 </button>
               )}
-              <span style={S.userName}>{user.name}</span>
+              <span style={S.userName}>{user?.username}</span>
               <button style={S.logoutBtn} onClick={handleLogout}>خروج</button>
             </div>
           </div>
@@ -234,36 +271,43 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <Section
-            title="Drafts"
-            color="#A8C4E8"
-            type="draft"
-            items={drafts}
-            emptyMsg="لا يوجد مسودات حالياً. ابدأ بإنشاء مسابقة جديدة."
-            onOpen={goToContinueDraft}
-            onResume={goToResumePlayback}
-            onDeleteRequest={requestDelete}
-          />
-          <Section
-            title="Saved"
-            color="#F5C840"
-            type="saved"
-            items={saved}
-            emptyMsg="لا يوجد مسابقات محفوظة بعد."
-            onOpen={goToOpen}
-            onPlay={goToPlay}
-            onDeleteRequest={requestDelete}
-          />
-          <Section
-            title="Completed"
-            color="#4CAF82"
-            type="completed"
-            items={completed}
-            emptyMsg="لا يوجد مسابقات مكتملة بعد."
-            onOpen={goToOpen}
-            onPlay={goToPlay}
-            onDeleteRequest={requestDelete}
-          />
+          {error && <div style={S.errorBanner}>{error}</div>}
+
+          {loading ? (
+            <div style={S.empty}>جارِ التحميل...</div>
+          ) : (
+            <>
+              <Section
+                title="Drafts"
+                color="#A8C4E8"
+                type="draft"
+                items={drafts}
+                emptyMsg="لا يوجد مسودات حالياً. ابدأ بإنشاء مسابقة جديدة."
+                onOpen={goToContinueDraft}
+                onDeleteRequest={requestDelete}
+              />
+              <Section
+                title="Saved"
+                color="#F5C840"
+                type="saved"
+                items={saved}
+                emptyMsg="لا يوجد مسابقات محفوظة بعد."
+                onOpen={goToOpen}
+                onPlay={goToPlay}
+                onDeleteRequest={requestDelete}
+              />
+              <Section
+                title="Completed"
+                color="#4CAF82"
+                type="completed"
+                items={completed}
+                emptyMsg="لا يوجد مسابقات مكتملة بعد."
+                onOpen={goToOpen}
+                onPlay={goToPlay}
+                onDeleteRequest={requestDelete}
+              />
+            </>
+          )}
         </main>
       </div>
 
@@ -280,6 +324,16 @@ export default function DashboardPage() {
 // الستايلز
 // ════════════════════════════════════════════════════════════
 const S = {
+  errorBanner: {
+    background: "rgba(210,70,70,0.1)",
+    border: "1px solid rgba(210,70,70,0.3)",
+    borderRadius: "8px",
+    padding: "12px 16px",
+    color: "#E07878",
+    fontSize: "13px",
+    marginBottom: "24px",
+    textAlign: "center",
+  },
   root: {
     minHeight: "100vh",
     background: "#1A4F9C",

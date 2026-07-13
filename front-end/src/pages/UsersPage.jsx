@@ -1,142 +1,158 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useAuth } from "../context/AuthContext";
+import { getAllUsers, updateUser, deleteUser } from "../services/userService";
+import { register } from "../services/authService";
+
+const ROLE_LABELS = { admin: "مدير", moderator: "مشرف", user: "مستخدم" };
 
 // ════════════════════════════════════════════════════════════
-// بيانات تجريبية — تُستبدل بـ Firestore عند الربط
+// Modal إضافة مستخدم جديد
+// ملحوظة: الباك اند مفيهوش endpoint لإنشاء مستخدم بـ role مخصص —
+// بيستخدم /auth/register اللى بيعمل الحساب بـ role: "user" افتراضياً دايماً.
 // ════════════════════════════════════════════════════════════
-const SAMPLE_USERS = [
-  { id: 1, username: "Admin1", password: "Admin1@2026", role: "admin" },
-  { id: 2, username: "User1",  password: "User1@2026",  role: "user"  },
-  { id: 3, username: "User2",  password: "User2@2026",  role: "user"  },
-  { id: 4, username: "User3",  password: "User3@2026",  role: "user"  },
-];
-
-// ════════════════════════════════════════════════════════════
-// Modal إضافة / تعديل المستخدم
-// ════════════════════════════════════════════════════════════
-function UserModal({ mode, initial, existingUsernames, onSave, onClose }) {
-  const [username, setUsername] = useState(initial?.username || "");
-  const [password, setPassword] = useState(initial?.password || "");
-  const [role,     setRole]     = useState(initial?.role     || "user");
+function AddUserModal({ onSave, onClose, saving }) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [errors,   setErrors]   = useState({});
-
-  const validate = () => {
-    const e = {};
-    const trimUser = username.trim();
-    const trimPass = password.trim();
-    if (!trimUser) e.username = "اسم المستخدم مطلوب";
-    else if (
-      existingUsernames
-        .filter((n) => n !== initial?.username)
-        .includes(trimUser)
-    ) e.username = "اسم المستخدم موجود بالفعل";
-    if (!trimPass) e.password = "كلمة المرور مطلوبة";
-    return e;
-  };
+  const [error, setError] = useState("");
 
   const handleSave = () => {
-    const e = validate();
-    if (Object.keys(e).length) { setErrors(e); return; }
-    onSave({ username: username.trim(), password: password.trim(), role });
+    setError("");
+    if (!username.trim() || !email.trim() || !password.trim()) {
+      setError("كل الحقول مطلوبة");
+      return;
+    }
+    if (password.length < 8) {
+      setError("كلمة المرور لازم تكون 8 حروف على الأقل");
+      return;
+    }
+    onSave({ username: username.trim(), email: email.trim(), password });
   };
 
   return (
     <div style={S.overlay} onClick={onClose}>
       <div style={{ ...S.modal, maxWidth: "420px" }} onClick={(e) => e.stopPropagation()}>
-
         <div style={S.modalHeader}>
-          <span style={S.modalTitle}>
-            {mode === "add" ? "إضافة مستخدم جديد" : `تعديل: ${initial.username}`}
-          </span>
+          <span style={S.modalTitle}>إضافة مستخدم جديد</span>
           <button style={S.closeBtn} onClick={onClose}>✕</button>
         </div>
 
         <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "18px" }}>
+          {error && <div style={S.errorBox}>{error}</div>}
 
-          {/* اسم المستخدم */}
           <div style={S.fieldGroup}>
             <label style={S.label}>اسم المستخدم <span style={S.required}>*</span></label>
             <input
               type="text"
               value={username}
-              onChange={(e) => { setUsername(e.target.value); setErrors((p) => ({ ...p, username: "" })); }}
+              onChange={(e) => setUsername(e.target.value)}
               placeholder="أدخل اسم المستخدم"
-              style={{ ...S.input, borderColor: errors.username ? "#D24646" : "#2E5FA8" }}
+              style={S.input}
               autoFocus
             />
-            {errors.username && <span style={S.errorText}>{errors.username}</span>}
           </div>
 
-          {/* كلمة المرور */}
+          <div style={S.fieldGroup}>
+            <label style={S.label}>البريد الإلكتروني <span style={S.required}>*</span></label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="أدخل البريد الإلكتروني"
+              style={S.input}
+            />
+          </div>
+
           <div style={S.fieldGroup}>
             <label style={S.label}>كلمة المرور <span style={S.required}>*</span></label>
             <div style={{ position: "relative" }}>
               <input
                 type={showPass ? "text" : "password"}
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: "" })); }}
+                onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSave()}
-                placeholder="أدخل كلمة المرور"
-                style={{
-                  ...S.input,
-                  borderColor: errors.password ? "#D24646" : "#2E5FA8",
-                  paddingLeft: "44px",
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
+                placeholder="8 أحرف على الأقل"
+                style={{ ...S.input, paddingLeft: "56px" }}
               />
-              <button
-                style={S.eyeBtn}
-                onClick={() => setShowPass((p) => !p)}
-                tabIndex={-1}
-              >
+              <button style={S.eyeBtn} onClick={() => setShowPass((p) => !p)} tabIndex={-1}>
                 {showPass ? "إخفاء" : "إظهار"}
               </button>
             </div>
-            {errors.password && <span style={S.errorText}>{errors.password}</span>}
           </div>
 
-          {/* الدور */}
-          <div style={S.fieldGroup}>
-            <label style={S.label}>الصلاحية</label>
-            <div style={S.roleRow}>
-              {["user", "admin"].map((r) => (
-                <div
-                  key={r}
-                  style={{
-                    ...S.roleOption,
-                    borderColor: role === r ? "#F5C840" : "#2E5FA8",
-                    background:  role === r ? "rgba(245,200,64,.06)" : "transparent",
-                  }}
-                  onClick={() => setRole(r)}
-                >
-                  <div style={{ ...S.radio, borderColor: role === r ? "#F5C840" : "#2E5FA8" }}>
-                    {role === r && <div style={S.radioDot} />}
-                  </div>
-                  <span style={{ color: "#FFFFFF", fontSize: "13px", fontWeight: 700 }}>
-                    {r === "admin" ? "مدير" : "مستخدم"}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div style={S.infoBox}>
+            الحساب الجديد هيتعمل بصلاحية "مستخدم" دايماً. لو محتاج ترفع صلاحيته لمشرف أو مدير، ده حالياً محتاج تدخّل مباشر على قاعدة البيانات.
           </div>
-
         </div>
 
         <div style={S.modalFooter}>
-          <button style={S.cancelBtn} onClick={onClose}>إلغاء</button>
-          <button
-            style={S.saveBtn}
-            onClick={handleSave}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-            onMouseDown={(e) => { e.currentTarget.style.transform = "scale(0.97)"; }}
-            onMouseUp={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-          >
-            {mode === "add" ? "إضافة" : "حفظ التعديل"}
+          <button style={S.cancelBtn} onClick={onClose} disabled={saving}>إلغاء</button>
+          <button style={{ ...S.saveBtn, opacity: saving ? 0.6 : 1 }} onClick={handleSave} disabled={saving}>
+            {saving ? "جارٍ الإضافة..." : "إضافة"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
 
+// ════════════════════════════════════════════════════════════
+// Modal تعديل username/email
+// ════════════════════════════════════════════════════════════
+function EditUserModal({ user, onSave, onClose, saving }) {
+  const [username, setUsername] = useState(user.username || "");
+  const [email, setEmail] = useState(user.email || "");
+  const [error, setError] = useState("");
+
+  const handleSave = () => {
+    setError("");
+    if (!username.trim() || !email.trim()) {
+      setError("اسم المستخدم والبريد الإلكتروني مطلوبين");
+      return;
+    }
+    onSave({ username: username.trim(), email: email.trim() });
+  };
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div style={{ ...S.modal, maxWidth: "420px" }} onClick={(e) => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <span style={S.modalTitle}>تعديل: {user.username}</span>
+          <button style={S.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "18px" }}>
+          {error && <div style={S.errorBox}>{error}</div>}
+
+          <div style={S.fieldGroup}>
+            <label style={S.label}>اسم المستخدم <span style={S.required}>*</span></label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              style={S.input}
+              autoFocus
+            />
+          </div>
+
+          <div style={S.fieldGroup}>
+            <label style={S.label}>البريد الإلكتروني <span style={S.required}>*</span></label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={S.input}
+            />
+          </div>
+        </div>
+
+        <div style={S.modalFooter}>
+          <button style={S.cancelBtn} onClick={onClose} disabled={saving}>إلغاء</button>
+          <button style={{ ...S.saveBtn, opacity: saving ? 0.6 : 1 }} onClick={handleSave} disabled={saving}>
+            {saving ? "جارٍ الحفظ..." : "حفظ التعديل"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -145,12 +161,11 @@ function UserModal({ mode, initial, existingUsernames, onSave, onClose }) {
 // ════════════════════════════════════════════════════════════
 // Modal تأكيد الحذف
 // ════════════════════════════════════════════════════════════
-function DeleteUserModal({ user, onConfirm, onClose }) {
+function DeleteUserModal({ user, onConfirm, onClose, busy }) {
   if (!user) return null;
   return (
     <div style={S.overlay} onClick={onClose}>
       <div style={{ ...S.modal, maxWidth: "400px" }} onClick={(e) => e.stopPropagation()}>
-
         <div style={S.modalHeader}>
           <span style={S.modalTitle}>حذف مستخدم</span>
           <button style={S.closeBtn} onClick={onClose}>✕</button>
@@ -164,28 +179,22 @@ function DeleteUserModal({ user, onConfirm, onClose }) {
                 {user.username}
               </div>
               <div style={{ color: "#6A90B8", fontSize: "12px" }}>
-                {user.role === "admin" ? "مدير" : "مستخدم"}
+                {ROLE_LABELS[user.role] || user.role}
               </div>
             </div>
           </div>
 
           <div style={{ ...S.infoBox, borderColor: "rgba(210,70,70,.3)", background: "rgba(210,70,70,.06)", color: "#E07878" }}>
-            سيتم منع هذا المستخدم من تسجيل الدخول. بياناته ومسابقاته ستنتقل إلى النظام وتظل متاحة للأدمن.
+            هيتم حذف الحساب نهائياً من قاعدة البيانات — الإجراء ده مش قابل للتراجع.
           </div>
         </div>
 
         <div style={S.modalFooter}>
-          <button style={S.cancelBtn} onClick={onClose}>تراجع</button>
-          <button
-            style={S.deleteConfirmBtn}
-            onClick={onConfirm}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-          >
-            حذف المستخدم
+          <button style={S.cancelBtn} onClick={onClose} disabled={busy}>تراجع</button>
+          <button style={{ ...S.deleteConfirmBtn, opacity: busy ? 0.6 : 1 }} onClick={onConfirm} disabled={busy}>
+            {busy ? "جارٍ الحذف..." : "حذف المستخدم"}
           </button>
         </div>
-
       </div>
     </div>
   );
@@ -194,58 +203,45 @@ function DeleteUserModal({ user, onConfirm, onClose }) {
 // ════════════════════════════════════════════════════════════
 // كارت المستخدم
 // ════════════════════════════════════════════════════════════
-function UserCard({ user, isOnlyAdmin, onEdit, onDelete }) {
-  const [hover,    setHover]    = useState(false);
-  const [showPass, setShowPass] = useState(false);
-  const canDelete = !(user.role === "admin" && isOnlyAdmin);
+function UserCard({ user, disableDelete, disableDeleteReason, onEdit, onDelete }) {
+  const [hover, setHover] = useState(false);
 
   return (
     <div
       style={{
         ...S.card,
         borderColor: hover ? "#F5C840" : "#2E5FA8",
-        transform:   hover ? "translateY(-2px)" : "none",
-        boxShadow:   hover ? "0 6px 24px rgba(0,0,0,.3)" : "0 2px 8px rgba(0,0,0,.15)",
+        transform: hover ? "translateY(-2px)" : "none",
+        boxShadow: hover ? "0 6px 24px rgba(0,0,0,.3)" : "0 2px 8px rgba(0,0,0,.15)",
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* الهيدر */}
       <div style={S.cardTop}>
         <div style={S.avatarCircle}>
-          <span style={S.avatarLetter}>{user.username[0]}</span>
+          <span style={S.avatarLetter}>{user.username?.[0]?.toUpperCase()}</span>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={S.cardUsername}>{user.username}</div>
           <div style={{
             ...S.roleBadge,
-            background: user.role === "admin"
-              ? "rgba(245,200,64,.12)"
+            background: user.role === "admin" ? "rgba(245,200,64,.12)"
+              : user.role === "moderator" ? "rgba(76,175,130,.12)"
               : "rgba(168,196,232,.1)",
-            color: user.role === "admin" ? "#F5C840" : "#A8C4E8",
+            color: user.role === "admin" ? "#F5C840"
+              : user.role === "moderator" ? "#4CAF82"
+              : "#A8C4E8",
           }}>
-            {user.role === "admin" ? "مدير" : "مستخدم"}
+            {ROLE_LABELS[user.role] || user.role}
           </div>
         </div>
       </div>
 
-      {/* كلمة المرور */}
-      <div style={S.passRow}>
-        <span style={S.passLabel}>كلمة المرور</span>
-        <div style={S.passValueRow}>
-          <span style={{ ...S.passValue, letterSpacing: showPass ? "0" : "2px" }}>
-            {showPass ? user.password : "••••••••"}
-          </span>
-          <button
-            style={S.togglePassBtn}
-            onClick={() => setShowPass((p) => !p)}
-          >
-            {showPass ? "إخفاء" : "إظهار"}
-          </button>
-        </div>
+      <div style={S.emailRow}>
+        <span style={S.emailLabel}>البريد الإلكتروني</span>
+        <span style={S.emailValue}>{user.email}</span>
       </div>
 
-      {/* أزرار */}
       <div style={S.cardActions}>
         <button
           style={S.editBtn}
@@ -258,12 +254,12 @@ function UserCard({ user, isOnlyAdmin, onEdit, onDelete }) {
         <button
           style={{
             ...S.deleteBtn,
-            opacity: canDelete ? 1 : 0.35,
-            cursor:  canDelete ? "pointer" : "not-allowed",
+            opacity: disableDelete ? 0.35 : 1,
+            cursor: disableDelete ? "not-allowed" : "pointer",
           }}
-          onClick={() => canDelete && onDelete(user)}
-          title={!canDelete ? "لا يمكن حذف المدير الوحيد" : ""}
-          onMouseEnter={(e) => { if (canDelete) { e.currentTarget.style.borderColor = "#D24646"; e.currentTarget.style.color = "#D24646"; } }}
+          onClick={() => !disableDelete && onDelete(user)}
+          title={disableDelete ? disableDeleteReason : ""}
+          onMouseEnter={(e) => { if (!disableDelete) { e.currentTarget.style.borderColor = "#D24646"; e.currentTarget.style.color = "#D24646"; } }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(210,70,70,.3)"; e.currentTarget.style.color = "rgba(210,70,70,.7)"; }}
         >
           حذف
@@ -277,31 +273,75 @@ function UserCard({ user, isOnlyAdmin, onEdit, onDelete }) {
 // الصفحة الرئيسية
 // ════════════════════════════════════════════════════════════
 export default function UsersPage() {
-  const [users,     setUsers]     = useState(SAMPLE_USERS);
-  const [modal,     setModal]     = useState(null); // null | "add" | { mode:"edit", user }
-  const [delTarget, setDelTarget] = useState(null);
+  const { user: currentUser } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const adminCount    = useMemo(() => users.filter((u) => u.role === "admin").length, [users]);
-  const existingNames = users.map((u) => u.username);
+  const [modal, setModal] = useState(null); // null | "add" | { mode:"edit", user }
+  const [delTarget, setDelTarget] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await getAllUsers();
+      setUsers(data);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر تحميل المستخدمين");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const adminCount = useMemo(() => users.filter((u) => u.role === "admin").length, [users]);
 
   // ── إضافة ──────────────────────────────────────────────
-  const handleAdd = (data) => {
-    setUsers((prev) => [...prev, { id: Date.now(), ...data }]);
-    setModal(null);
+  const handleAdd = async (payload) => {
+    setSaving(true);
+    setError("");
+    try {
+      await register(payload.username, payload.email, payload.password);
+      setModal(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر إضافة المستخدم");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── تعديل ──────────────────────────────────────────────
-  const handleEdit = (data) => {
-    setUsers((prev) =>
-      prev.map((u) => u.id === modal.user.id ? { ...u, ...data } : u)
-    );
-    setModal(null);
+  const handleEdit = async (payload) => {
+    setSaving(true);
+    setError("");
+    try {
+      await updateUser(modal.user.user_id, payload);
+      setModal(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر حفظ التعديل");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── حذف ────────────────────────────────────────────────
-  const handleDelete = () => {
-    setUsers((prev) => prev.filter((u) => u.id !== delTarget.id));
-    setDelTarget(null);
+  const handleDelete = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await deleteUser(delTarget.user_id);
+      setDelTarget(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر حذف المستخدم");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -316,7 +356,6 @@ export default function UsersPage() {
 
         <div style={S.inner}>
 
-          {/* ── الهيدر ── */}
           <div style={S.pageHeader}>
             <span style={S.pageTitle}>إدارة المستخدمين</span>
             <button
@@ -331,7 +370,6 @@ export default function UsersPage() {
             </button>
           </div>
 
-          {/* ── ملخص ── */}
           <div style={S.summaryRow}>
             <div style={S.summaryCard}>
               <div style={S.summaryValue}>{users.length}</div>
@@ -343,53 +381,52 @@ export default function UsersPage() {
             </div>
             <div style={S.summaryCard}>
               <div style={S.summaryValue}>{users.length - adminCount}</div>
-              <div style={S.summaryLabel}>مستخدمين</div>
+              <div style={S.summaryLabel}>باقى المستخدمين</div>
             </div>
           </div>
 
-          {/* ── الجريد ── */}
-          <div style={S.grid}>
-            {users.map((user) => (
-              <UserCard
-                key={user.id}
-                user={user}
-                isOnlyAdmin={adminCount === 1}
-                onEdit={(u) => setModal({ mode: "edit", user: u })}
-                onDelete={(u) => setDelTarget(u)}
-              />
-            ))}
-          </div>
+          {error && <div style={{ ...S.errorBox, marginBottom: "20px" }}>{error}</div>}
+
+          {loading && <div style={S.emptyText}>جارِ تحميل المستخدمين...</div>}
+
+          {!loading && users.length === 0 && !error && (
+            <div style={S.emptyText}>لا يوجد مستخدمين</div>
+          )}
+
+          {!loading && users.length > 0 && (
+            <div style={S.grid}>
+              {users.map((u) => {
+                const isSelf = currentUser?.user_id === u.user_id;
+                const isLastAdmin = u.role === "admin" && adminCount === 1;
+                const disableDelete = isSelf || isLastAdmin;
+                const reason = isSelf ? "لا يمكنك حذف حسابك الخاص" : isLastAdmin ? "لا يمكن حذف المدير الوحيد" : "";
+                return (
+                  <UserCard
+                    key={u.user_id}
+                    user={u}
+                    disableDelete={disableDelete}
+                    disableDeleteReason={reason}
+                    onEdit={(user) => setModal({ mode: "edit", user })}
+                    onDelete={(user) => setDelTarget(user)}
+                  />
+                );
+              })}
+            </div>
+          )}
 
         </div>
       </div>
 
-      {/* ── Modals ── */}
       {modal === "add" && (
-        <UserModal
-          mode="add"
-          initial={null}
-          existingUsernames={existingNames}
-          onSave={handleAdd}
-          onClose={() => setModal(null)}
-        />
+        <AddUserModal onSave={handleAdd} onClose={() => setModal(null)} saving={saving} />
       )}
 
       {modal && modal.mode === "edit" && (
-        <UserModal
-          mode="edit"
-          initial={modal.user}
-          existingUsernames={existingNames}
-          onSave={handleEdit}
-          onClose={() => setModal(null)}
-        />
+        <EditUserModal user={modal.user} onSave={handleEdit} onClose={() => setModal(null)} saving={saving} />
       )}
 
       {delTarget && (
-        <DeleteUserModal
-          user={delTarget}
-          onConfirm={handleDelete}
-          onClose={() => setDelTarget(null)}
-        />
+        <DeleteUserModal user={delTarget} onConfirm={handleDelete} onClose={() => setDelTarget(null)} busy={saving} />
       )}
     </>
   );
@@ -433,7 +470,6 @@ const S = {
     padding: "40px 28px 0",
   },
 
-  // هيدر
   pageHeader: {
     display: "flex",
     alignItems: "center",
@@ -460,7 +496,6 @@ const S = {
     boxShadow: "0 4px 0 #B87A10",
   },
 
-  // ملخص
   summaryRow: {
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
@@ -488,14 +523,20 @@ const S = {
     fontWeight: 600,
   },
 
-  // جريد
+  emptyText: {
+    color: "#A8C4E8",
+    fontSize: "15px",
+    fontWeight: 600,
+    textAlign: "center",
+    padding: "40px 0",
+  },
+
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
     gap: "14px",
   },
 
-  // كارت
   card: {
     background: "#162E58",
     border: "1.5px solid #2E5FA8",
@@ -544,8 +585,7 @@ const S = {
     padding: "2px 9px",
   },
 
-  // كلمة المرور
-  passRow: {
+  emailRow: {
     background: "#0F2040",
     borderRadius: "8px",
     padding: "10px 14px",
@@ -553,42 +593,23 @@ const S = {
     flexDirection: "column",
     gap: "4px",
   },
-  passLabel: {
+  emailLabel: {
     fontSize: "10px",
     color: "#6A90B8",
     fontWeight: 700,
     textTransform: "uppercase",
     letterSpacing: "0.5px",
   },
-  passValueRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-  },
-  passValue: {
+  emailValue: {
     color: "#A8C4E8",
     fontSize: "13px",
     fontWeight: 600,
     fontFamily: "'Cairo', sans-serif",
-    flex: 1,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  togglePassBtn: {
-    background: "none",
-    border: "none",
-    color: "#6A90B8",
-    fontSize: "11px",
-    fontWeight: 700,
-    fontFamily: "'Cairo', sans-serif",
-    cursor: "pointer",
-    padding: "0",
-    flexShrink: 0,
-  },
 
-  // أزرار الكارت
   cardActions: {
     display: "flex",
     gap: "8px",
@@ -619,7 +640,6 @@ const S = {
     transition: "border-color 0.2s, color 0.2s",
   },
 
-  // ── Modals ──
   overlay: {
     position: "fixed",
     inset: 0,
@@ -705,7 +725,6 @@ const S = {
     transition: "opacity 0.2s",
   },
 
-  // فورم
   fieldGroup: {
     display: "flex",
     flexDirection: "column",
@@ -721,7 +740,7 @@ const S = {
   },
   input: {
     background: "#0F2040",
-    border: "1.5px solid",
+    border: "1.5px solid #2E5FA8",
     borderRadius: "8px",
     padding: "11px 14px",
     color: "#FFFFFF",
@@ -745,41 +764,14 @@ const S = {
     cursor: "pointer",
     padding: "0",
   },
-  roleRow: {
-    display: "flex",
-    gap: "10px",
-  },
-  roleOption: {
-    flex: 1,
-    border: "1.5px solid",
-    borderRadius: "9px",
-    padding: "12px 14px",
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    cursor: "pointer",
-    transition: "border-color 0.2s, background 0.2s",
-  },
-  radio: {
-    width: "18px",
-    height: "18px",
-    borderRadius: "50%",
-    border: "2px solid",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    transition: "border-color 0.2s",
-  },
-  radioDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%",
-    background: "#F5C840",
-  },
-  errorText: {
+  errorBox: {
+    background: "rgba(210,70,70,0.1)",
+    border: "1px solid rgba(210,70,70,0.3)",
+    borderRadius: "8px",
+    padding: "10px 14px",
     color: "#E07878",
-    fontSize: "12px",
+    fontSize: "13px",
+    lineHeight: 1.6,
   },
   infoBox: {
     background: "rgba(245,200,64,.08)",

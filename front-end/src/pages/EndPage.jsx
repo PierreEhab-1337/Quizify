@@ -1,12 +1,47 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { finishContest } from "../services/contestService";
 
 export default function EndPage() {
+  const [searchParams] = useSearchParams();
+  const contestId = searchParams.get("contestId");
+  const navigate = useNavigate();
+
   const [visible, setVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null); // { score, totalQuestions }
+  const calledRef = useRef(false); // يمنع نداء finish مرتين (React StrictMode / إعادة رندر)
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    if (!contestId) {
+      setError("لا يوجد معرّف مسابقة (contestId) فى الرابط");
+      setLoading(false);
+      return;
+    }
+    if (calledRef.current) return;
+    calledRef.current = true;
+
+    finishContest(contestId)
+      .then((data) => {
+        // الباك اند بيرجّع { data: contest, score, totalQuestions }
+        setResult({ score: data.score, totalQuestions: data.totalQuestions });
+      })
+      .catch((err) => {
+        setError(
+          err.response?.data?.message ||
+          "تعذّر إنهاء المسابقة — تأكد إنها كانت شغالة (inProgress) قبل الوصول لهذه الصفحة"
+        );
+      })
+      .finally(() => setLoading(false));
+  }, [contestId]);
+
+  const goToDashboard = () => navigate("/");
 
   return (
     <>
@@ -35,16 +70,43 @@ export default function EndPage() {
 
           {/* الصليب */}
           <div style={S.crossWrap}>
-            {/* الجذع العمودي */}
             <div style={S.crossVertical} />
-            {/* الذراع الأفقي */}
             <div style={S.crossHorizontal} />
-            {/* توهج خفيف حول الصليب */}
             <div style={S.crossGlow} />
           </div>
 
-          {/* النص الختامي */}
-          <p style={S.closingText}>وبهذا تنتهى فقرتنا لهذا اليوم</p>
+          {/* حالة التحميل */}
+          {loading && (
+            <p style={S.closingText}>جارِ إنهاء المسابقة وتجهيز النتيجة...</p>
+          )}
+
+          {/* خطأ */}
+          {!loading && error && (
+            <>
+              <p style={{ ...S.closingText, color: "#E07878" }}>{error}</p>
+              <button style={S.dashboardBtn} onClick={goToDashboard}>
+                العودة للوحة المسابقات
+              </button>
+            </>
+          )}
+
+          {/* النتيجة */}
+          {!loading && !error && result && (
+            <>
+              <div style={S.scoreCard}>
+                <span style={S.scoreLabel}>النتيجة النهائية</span>
+                <span style={S.scoreValue}>
+                  {result.score} / {result.totalQuestions}
+                </span>
+              </div>
+
+              <p style={S.closingText}>وبهذا تنتهى فقرتنا لهذا اليوم</p>
+
+              <button style={S.dashboardBtn} onClick={goToDashboard}>
+                العودة للوحة المسابقات
+              </button>
+            </>
+          )}
 
         </div>
       </div>
@@ -63,6 +125,8 @@ const S = {
     fontFamily: "'Cairo', sans-serif",
     position: "relative",
     overflow: "hidden",
+    padding: "24px",
+    boxSizing: "border-box",
   },
 
   dots: {
@@ -118,7 +182,7 @@ const S = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: "52px",
+    marginBottom: "40px",
   },
   crossVertical: {
     position: "absolute",
@@ -145,6 +209,31 @@ const S = {
     pointerEvents: "none",
   },
 
+  // كارت النتيجة
+  scoreCard: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "6px",
+    background: "rgba(15,32,64,0.55)",
+    border: "1.5px solid #2E5FA8",
+    borderRadius: "16px",
+    padding: "18px 44px",
+    marginBottom: "28px",
+  },
+  scoreLabel: {
+    color: "#A8C4E8",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+  scoreValue: {
+    fontFamily: "'Lemonada', cursive",
+    fontSize: "clamp(30px, 5vw, 44px)",
+    fontWeight: 700,
+    color: "#F5C840",
+    textShadow: "0 4px 20px rgba(245,200,64,0.35)",
+  },
+
   // النص الختامي
   closingText: {
     fontFamily: "'Cairo', sans-serif",
@@ -152,8 +241,21 @@ const S = {
     fontWeight: 700,
     color: "#A8C4E8",
     textAlign: "center",
-    margin: 0,
+    margin: "0 0 32px",
     letterSpacing: "0.3px",
     lineHeight: 1.6,
+  },
+
+  dashboardBtn: {
+    background: "linear-gradient(135deg, #E8A020, #F5C840)",
+    border: "none",
+    borderRadius: "10px",
+    padding: "13px 32px",
+    color: "#1A2A00",
+    fontSize: "14px",
+    fontWeight: 900,
+    fontFamily: "'Cairo', sans-serif",
+    cursor: "pointer",
+    boxShadow: "0 6px 24px rgba(232,160,32,0.35)",
   },
 };
