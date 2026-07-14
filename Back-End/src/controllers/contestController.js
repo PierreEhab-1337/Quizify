@@ -52,9 +52,9 @@ export const getContest = async (req, res) => {
     const result = await db.query(`
         SELECT C.*, COUNT(QC.question_id) AS totalQuestions FROM contest C
         LEFT JOIN question_contest QC ON C.contest_id = QC.contest_id
-        WHERE C.user_id = $1 AND (C.contest_id = $2 OR $3 = true)
+        WHERE C.contest_id = $1 AND (C.user_id = $2 OR $3 = true)
         GROUP BY C.contest_id
-    `, [userId, id, isAdmin]);
+    `, [id, userId, isAdmin]);
 
     if(result.rowCount === 0)
         return res.status(404).json({
