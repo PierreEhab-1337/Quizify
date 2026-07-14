@@ -21,29 +21,6 @@ export const getAllContestsForAdmin = async (req, res) => {
     });
 }
 
-export const getContestForAdmin = async (req, res) => {
-    const {id} = req.params;
-
-    const result = await db.query(
-        `SELECT C.*, COUNT(QC.question_id) AS totalQuestions FROM contest C
-        LEFT JOIN question_contest QC ON C.contest_id = QC.contest_id
-        WHERE C.contest_id = $1
-        GROUP BY C.contest_id
-        `, [id]);
-
-    if(result.rowCount === 0)
-        return res.status(404).json({
-            success: false,
-            message: "Contest Not Found!"
-        });
-    
-    res.status(200).json({
-        success : true,
-        message : "Contest Retrieved Successfully",
-        data : result.rows[0]
-    });
-}
-
 export const getAllContests = async (req, res) => {
     const {userId} = req.user;
 
@@ -69,14 +46,15 @@ export const getAllContests = async (req, res) => {
 
 export const getContest = async (req, res) => {
     const {id} = req.params;
-    const {userId} = req.user;
+    const { userId, role } = req.user;
+    const isAdmin = role === 'admin';
 
     const result = await db.query(`
         SELECT C.*, COUNT(QC.question_id) AS totalQuestions FROM contest C
         LEFT JOIN question_contest QC ON C.contest_id = QC.contest_id
-        WHERE C.user_id = $1 AND C.contest_id = $2
+        WHERE C.user_id = $1 AND (C.contest_id = $2 OR $3 = true)
         GROUP BY C.contest_id
-    `, [userId, id]);
+    `, [userId, id, isAdmin]);
 
     if(result.rowCount === 0)
         return res.status(404).json({

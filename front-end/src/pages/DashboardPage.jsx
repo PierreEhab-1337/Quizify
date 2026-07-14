@@ -7,7 +7,7 @@ import {
   deleteContest,
   startContest,
   getContestQuestions,
-  getAllContestsAdmin
+  getAllContestsAdmin,
 } from "../services/contestService";
 
 const formatDate = (iso) =>
@@ -146,40 +146,37 @@ export default function DashboardPage() {
   const isAdmin = user?.role === "admin";
 
   const loadContests = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      let list;
-      if(isAdmin)
-        list = await getAllContestsAdmin();
-      else
-        list = await getMyContests();
-      // بنجيب عدد الأسئلة لكل مسابقة (الـ API الحالي مش بيرجّعه جوه القايمة نفسها)
-      const withCounts = await Promise.all(
-        list.map(async (c) => {
-          let questionsCount = 0;
-          try {
-            const qs = await getContestQuestions(c.contest_id);
-            questionsCount = qs.length;
-          } catch {
-            // تجاهل لو فشل حساب العدد لمسابقة معيّنة
-          }
-          return {
-            id: c.contest_id,
-            name: c.contest_name,
-            status: c.status,
-            created_at: c.created_at,
-            questionsCount,
-          };
-        })
-      );
-      setContests(withCounts);
-    } catch (err) {
-      setError(err.response?.data?.message || "تعذّر تحميل المسابقات");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      setLoading(true);
+      setError("");
+      try {
+        const list = isAdmin
+          ? await getAllContestsAdmin()
+          : await getMyContests();
+        const withCounts = await Promise.all(
+          list.map(async (c) => {
+            let questionsCount = 0;
+            try {
+              const qs = await getContestQuestions(c.contest_id);
+              questionsCount = qs.length;
+            } catch {
+              // تجاهل لو فشل حساب العدد لمسابقة معيّنة
+            }
+            return {
+              id: c.contest_id,
+              name: c.contest_name,
+              status: c.status,
+              created_at: c.created_at,
+              questionsCount,
+            };
+          })
+        );
+        setContests(withCounts);
+      } catch (err) {
+        setError(err.response?.data?.message || "تعذّر تحميل المسابقات");
+      } finally {
+        setLoading(false);
+      }
+    }, [isAdmin]);
 
   useEffect(() => {
     loadContests();
