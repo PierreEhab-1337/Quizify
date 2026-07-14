@@ -1,6 +1,6 @@
 import express from 'express';
 import {getAllContests, getAllContestsForAdmin,
-        getContest, getContestForAdmin, updateContest, 
+        getContest, updateContest, 
         createContest, removeContest, getQuestionsOfContest,
         addQuestionToContest, updateQuestionOrder, removeQuestionFromContest,
         startContest, answerQuestion, endContest, addQuestionsToContestRandomly, getSingleQuestionOfContest} from '../controllers/contestController.js';
@@ -11,7 +11,6 @@ import asyncHandler from '../utils/asyncHandler.js';
 const router = express.Router();
 
 router.get('/admin', authMiddleware, authorizeRole("admin"), asyncHandler(getAllContestsForAdmin));
-router.get('/admin/:id', authMiddleware, authorizeRole("admin"), asyncHandler(getContestForAdmin));
 
 router.get('/mycontests', authMiddleware, asyncHandler(getAllContests));
 router.post('/mycontests', authMiddleware, asyncHandler(createContest));
