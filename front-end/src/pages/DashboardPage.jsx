@@ -7,6 +7,7 @@ import {
   deleteContest,
   startContest,
   getContestQuestions,
+  getAllContestsAdmin
 } from "../services/contestService";
 
 const formatDate = (iso) =>
@@ -148,7 +149,11 @@ export default function DashboardPage() {
     setLoading(true);
     setError("");
     try {
-      const list = await getMyContests();
+      let list;
+      if(isAdmin)
+        list = await getAllContestsAdmin();
+      else
+        list = await getMyContests();
       // بنجيب عدد الأسئلة لكل مسابقة (الـ API الحالي مش بيرجّعه جوه القايمة نفسها)
       const withCounts = await Promise.all(
         list.map(async (c) => {

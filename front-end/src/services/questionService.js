@@ -2,8 +2,13 @@ import api from "./api";
 
 // يرجّع الأسئلة، مع فلاتر اختيارية: category, question_type, search
 export async function getQuestions(filters = {}) {
-  const { data } = await api.get("/question", { params: filters });
-  return data.data; // array of { question_id, description, question_type, tags, images, choices }
+  try {
+    const { data } = await api.get("/question", { params: filters });
+    return data.data; // array of { question_id, description, question_type, tags, images, choices }
+  } catch (err) {
+    if (err.response?.status === 404) return [];
+    throw err;
+  }
 }
 
 // يرجّع كل الأسئلة (متاح لأي مستخدم مسجّل دخول)

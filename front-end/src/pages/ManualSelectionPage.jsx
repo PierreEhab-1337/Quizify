@@ -8,6 +8,7 @@ import {
   addQuestionToContest,
   removeQuestionFromContest,
   randomFillContest,
+  startContest
 } from "../services/contestService";
 
 const CAT_COLORS = ["#E8A020", "#4CAF82", "#D4537E", "#378ADD", "#1D9E75", "#7F77DD", "#D85A30", "#5DCAA5"];
@@ -156,8 +157,17 @@ export default function ManualSelectionPage() {
     }
   };
 
-  const handleFinish = () => {
-    navigate(`/playback/${contestId}`);
+  const goToPlay = async () => {
+    if (!contest) return;
+
+    try {
+      if (contest.status !== "inProgress") {
+        await startContest(contestId);
+      }
+      navigate(`/playback/${contestId}`);
+    } catch (err) {
+      setError(err.response?.data?.message || "تعذّر بدء تشغيل المسابقة");
+    }
   };
 
   return (
@@ -316,7 +326,7 @@ export default function ManualSelectionPage() {
               opacity: contestQuestions.length === 0 ? 0.5 : 1,
               cursor: contestQuestions.length === 0 ? "not-allowed" : "pointer",
             }}
-            onClick={handleFinish}
+            onClick={goToPlay}
             disabled={contestQuestions.length === 0}
           >
             الانتقال لعرض المسابقة
