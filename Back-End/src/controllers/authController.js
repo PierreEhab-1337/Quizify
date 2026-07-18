@@ -1,13 +1,13 @@
 import validator from "validator"
 import bcrypt, { hash } from "bcrypt"
 import JWT from "jsonwebtoken"
-import { SAFE_USER_FIELDS } from "../constants.js"
+import { SAFE_USER_FIELDS, ROLES } from "../constants.js"
 import db from "../config/db.js"
 
 export const registerUser = async (req,res) => {
-    const {username, email, password} = req.body; 
+    const {username, email, password, role} = req.body; 
 
-    if(username === undefined || email === undefined || password === undefined)
+    if(username === undefined || email === undefined || password === undefined || role === undefined)
         return res.status(400).json({
             success : false,
             message: "Fill missing fields!"
@@ -31,11 +31,17 @@ export const registerUser = async (req,res) => {
             message: "Password must be at least 8 characters"
         });
 
+    if(!ROLES.includes(role))
+        return res.status(400).json({
+            success : false,
+            message: "Role is unavailable"
+        });
+
     // const password_hash = await bcrypt.hash(password, 10);
 
     const result = await db.query(
-        `INSERT INTO users (username,email,password_hash) VALUES ($1,$2,$3) RETURNING ${SAFE_USER_FIELDS} `,
-        [username, email, password]
+        `INSERT INTO users (username,email,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING ${SAFE_USER_FIELDS} `,
+        [username, email, password, role]
     )
 
     res.status(201).json({

@@ -1,10 +1,10 @@
 import db from "../config/db.js"
 import validator from "validator"
-import { SAFE_USER_FIELDS } from "../constants.js"; 
+import { SAFE_USER_FIELDS, UNSAFE_USER_FIELDS, ROLES } from "../constants.js"; 
 
 export const getAllUsers = async (req,res) => {
     const result = await db.query(
-        `SELECT ${SAFE_USER_FIELDS} from users;`
+        `SELECT ${UNSAFE_USER_FIELDS} from users;`
     );
     res.status(200).json({
         success : true,
@@ -41,12 +41,12 @@ export const updateUser = async (req,res) =>{
     else
         id = req.user.userId;
 
-    const {username, email} = req.body;
+    const {username, email, password, role} = req.body;
 
     const updates = [];
     const values = [];
 
-    if(username === undefined && email === undefined ) // Executes when all inputs are empty only
+    if(username === undefined && email === undefined && password === undefined && role ) // Executes when all inputs are empty only
         return res.status(400).json({
             success : false,
             message: "Fill missing fields!"
@@ -78,6 +78,26 @@ export const updateUser = async (req,res) =>{
         updates.push(`email = $${values.length}`);
     }
 
+    if(password !== undefined){
+        if(password.length < 8)
+            return res.status(400).json({
+                success : false,
+                message: "Password must be at least 8 characters"
+            });
+        values.push(password);
+        updates.push(`password_hash = $${values.length}`)
+    }
+
+    if(role !== undefined){
+        if(!ROLES.includes(role))
+            return res.status(400).json({
+                success : false,
+                message: "Role is unavailable"
+            });
+        values.push(role);
+        updates.push(`role = $${values.length}`)
+    }
+
     values.push(id);
 
     if(req.user.userId !== id && req.user.role !== "admin")
@@ -87,7 +107,7 @@ export const updateUser = async (req,res) =>{
         });
     
     const result = await db.query(
-        `UPDATE users SET ${updates.join(", ")} WHERE user_id = $${values.length} RETURNING user_id,username,email,role`,
+        `UPDATE users SET ${updates.join(", ")} WHERE user_id = $${values.length} RETURNING user_id,username,email,role,password_hash`,
         values
     );
 

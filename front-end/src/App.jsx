@@ -15,7 +15,7 @@ import PlaybackGridPage from "./pages/PlaybackGridPage.jsx";
 import QuestionPlayPage from "./pages/QuestionPlayPage.jsx";
 import EndPage from "./pages/EndPage.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
-import AdminStatsPage from "./pages/admin stat.jsx"; // محتواه الفعلي: إحصائيات الأدمن الحقيقية (Dashboard)
+import AdminStatsPage from "./pages/admin_stat.jsx"; // محتواه الفعلي: إحصائيات الأدمن الحقيقية (Dashboard)
 
 const NAV_ITEMS = [
   { to: "/", label: "الرئيسية" },
