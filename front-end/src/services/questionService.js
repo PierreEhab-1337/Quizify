@@ -39,7 +39,7 @@ export async function deleteQuestion(id) {
   return data.data;
 }
 
-export async function uploadImage(questionId, key, file) {
+export async function uploadQuestionImage(questionId, key, file) {
   const ext = file.name.split(".").pop(); // e.g. "jpg", "png"
 
   const { data } = await api.post("/question/upload-url", {
