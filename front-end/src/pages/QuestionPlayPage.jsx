@@ -23,7 +23,7 @@ export default function QuestionPlayPage() {
 
   // ── مؤقت بسيط، محلي بالكامل (الباك اند مفيهوش تخزين للوقت) ──
   const [secondsLeft, setSecondsLeft] = useState(TIMER_SECONDS);
-  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerRunning, setTimerRunning] = useState(true);
   const intervalRef = useRef(null);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function QuestionPlayPage() {
     setError("");
     setRevealed(false);
     setSecondsLeft(TIMER_SECONDS);
-    setTimerRunning(false);
+    setTimerRunning(true);
     getContestQuestion(contestId, questionId)
       .then((data) => {
         if (!cancelled) setQuestion(data);
@@ -149,13 +149,6 @@ export default function QuestionPlayPage() {
                 ))}
               </div>
             )}
-
-            {/* <div style={S.tagsRow}>
-              <span style={{ ...S.tagChip, fontWeight: 800 }}>{TYPE_LABELS[question.question_type]}</span>
-              {tagNames.map((tag, i) => (
-                <span key={i} style={S.tagChip}>{tag}</span>
-              ))}
-            </div> */}
           </div>
 
           {error && <div style={{ ...S.pendingBox, borderColor: "rgba(210,70,70,.4)", color: "#E07878" }}>{error}</div>}
@@ -183,8 +176,14 @@ export default function QuestionPlayPage() {
                       }}
                     >
                       <span style={S.choiceLetter}>{OPTION_LETTERS[i] || i + 1}</span>
-                      {c.image_path && <img src={c.image_path} alt="" style={S.choiceImage} />}
-                      <span>{c.description}</span>
+                      {c.image_path && (
+                        <img
+                          src={c.image_path}
+                          alt=""
+                          style={c.description ? S.choiceImage : S.largechoiceImage}
+                        />
+                      )}
+                      <span>{c.description || ""}</span>
                     </div>
                   ))}
                 </div>
@@ -479,6 +478,13 @@ const S = {
   choiceImage: {
     width: "48px",
     height: "48px",
+    objectFit: "cover",
+    borderRadius: "8px",
+    flexShrink: 0,
+  },
+  largechoiceImage: {
+    width: "120px",
+    height: "120px",
     objectFit: "cover",
     borderRadius: "8px",
     flexShrink: 0,

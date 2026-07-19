@@ -24,7 +24,7 @@ const TYPE_COLOR = {
 };
 
 const OPTION_LETTERS = ["أ", "ب", "ج", "د"];
-const EMPTY_CHOICE = () => ({ description: "", status: false, imageFile: null, image_path: null });
+const EMPTY_CHOICE = () => ({ description: "", status: false, imageFile: null, image_path: null, image_preview: null, });
 
 // ════════════════════════════════════════════════════════════
 // Modal إضافة / تعديل
@@ -40,7 +40,8 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
         status: !!c.status,
         imageFile: null,
         image_path: c.image_path || null,
-      }));
+        image_preview: c.image_path || null,
+}));
     }
     return [EMPTY_CHOICE(), EMPTY_CHOICE()];
   });
@@ -70,8 +71,17 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
   };
 
   const setChoiceImage = (i, file) => {
+    if (!file) return;
     setChoices((prev) =>
-      prev.map((c, idx) => (idx === i ? { ...c, imageFile: file } : c))
+      prev.map((c, idx) =>
+        idx === i
+          ? {
+              ...c,
+              imageFile: file,
+              image_preview: URL.createObjectURL(file),
+            }
+          : c
+      )
     );
   };
 
@@ -252,6 +262,19 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
                       placeholder={`الاختيار ${OPTION_LETTERS[i] || i + 1}`}
                       style={S.input}
                     />
+                    {c.image_preview && (
+                      <img
+                        src={c.image_preview}
+                        alt=""
+                        style={{
+                          width: "40px",
+                          height: "40px",
+                          objectFit: "cover",
+                          borderRadius: "6px",
+                          border: "1px solid #2E5FA8",
+                        }}
+                      />
+                    )}
                     <label style={S.choiceImageBtn} title="صورة الاختيار">
                       {c.imageFile ? "✓" : c.image_path ? "🖼" : "+"}
                       <input
@@ -359,11 +382,18 @@ function QuestionCard({ q, onEdit, onDelete }) {
         </div>
       )}
 
-      {q.choices?.length > 0 && (
-        <div style={S.cardOptions}>
-          {q.choices.map((c, i) => (
+     {q.choices?.length > 0 && (
+      <div style={S.cardOptions}>
+        {q.choices.map((c, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+            }}
+          >
             <span
-              key={i}
               style={{
                 ...S.optPill,
                 background: c.status ? "rgba(76,175,130,.15)" : "rgba(255,255,255,.05)",
@@ -373,9 +403,18 @@ function QuestionCard({ q, onEdit, onDelete }) {
             >
               {OPTION_LETTERS[i] || i + 1}- {c.description}
             </span>
-          ))}
-        </div>
-      )}
+
+            {c.image_path && (
+              <img
+                src={c.image_path}
+                alt=""
+                style={S.imageThumb}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    )}
 
       <div style={S.cardActions}>
         <button
