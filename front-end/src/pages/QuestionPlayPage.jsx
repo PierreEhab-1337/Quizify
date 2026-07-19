@@ -142,6 +142,14 @@ export default function QuestionPlayPage() {
               <p style={S.questionText}>{question.description}</p>
             </div>
 
+            {question.images?.length > 0 && (
+              <div style={S.questionImagesRow}>
+                {question.images.map((url, i) => (
+                  <img key={i} src={url} alt="" style={S.questionImage} />
+                ))}
+              </div>
+            )}
+
             {/* <div style={S.tagsRow}>
               <span style={{ ...S.tagChip, fontWeight: 800 }}>{TYPE_LABELS[question.question_type]}</span>
               {tagNames.map((tag, i) => (
@@ -175,7 +183,8 @@ export default function QuestionPlayPage() {
                       }}
                     >
                       <span style={S.choiceLetter}>{OPTION_LETTERS[i] || i + 1}</span>
-                      {c.description}
+                      {c.image_path && <img src={c.image_path} alt="" style={S.choiceImage} />}
+                      <span>{c.description}</span>
                     </div>
                   ))}
                 </div>
@@ -452,5 +461,26 @@ const S = {
     fontFamily: "'Cairo', sans-serif",
     cursor: "pointer",
     boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  },
+    questionImagesRow: {
+    display: "flex",
+    gap: "16px",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    marginTop: "24px",
+  },
+  questionImage: {
+    maxWidth: "260px",
+    maxHeight: "220px",
+    objectFit: "contain",
+    borderRadius: "12px",
+    border: "2px solid rgba(26,42,0,0.2)",
+  },
+  choiceImage: {
+    width: "48px",
+    height: "48px",
+    objectFit: "cover",
+    borderRadius: "8px",
+    flexShrink: 0,
   },
 };

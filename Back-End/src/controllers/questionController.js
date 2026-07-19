@@ -1,5 +1,24 @@
 import db from "../config/db.js"
 import { QUESTION_TYPES } from "../constants.js";
+import { supabaseAdmin } from "../config/supabase.js";
+
+// يحول storage path لرابط عام قابل للعرض فى <img>
+function toPublicUrl(path) {
+    if (!path) return null;
+    return supabaseAdmin.storage.from("Image").getPublicUrl(path).data.publicUrl;
+}
+
+// يحول images/choices من storage paths لروابط عامة
+function withPublicUrls(q) {
+    return {
+        ...q,
+        images: (q.images || []).map(toPublicUrl),
+        choices: (q.choices || []).map(c => ({
+            ...c,
+            image_path: toPublicUrl(c.image_path),
+        })),
+    };
+}
 
 export const getAllQuestions = async (req, res) => {
     const { category, question_type, search } = req.query;
@@ -65,10 +84,12 @@ export const getAllQuestions = async (req, res) => {
         values
     );
 
+    const data = result.rows.map(withPublicUrls);
+
     res.status(200).json({
         success: true,
         message: "All questions have been retrieved successfully!",
-        data: result.rows
+        data
     });
 };
 
@@ -117,12 +138,12 @@ export const getQuestion = async (req,res) => {
     res.status(200).json({
         success : true,
         message : "Question found successfully!",
-        data : result.rows[0]
+        data : withPublicUrls(result.rows[0])
     });
 }
 
 export const createQuestion = async (req, res, next) => {
-    const {description, question_type, tags, choices, images} = req.body; // <-- added images
+    const {description, question_type, tags, choices, images} = req.body;
     const user_id = req.user.userId;
     if(description === undefined || question_type === undefined || !description.trim() || choices === undefined)
         return res.status(400).json({
@@ -213,7 +234,7 @@ export const createQuestion = async (req, res, next) => {
                 x++;
                 await client.query(
                     `INSERT INTO choice(question_id, choice_number, status, description, image_path) VALUES ($1, $2, $3, $4, $5)`,
-                    [question_id, x, choice.status, choice.description, choice.image_path || null] // <-- added image_path
+                    [question_id, x, choice.status, choice.description, choice.image_path || null]
                 )
             }
         }
@@ -257,7 +278,7 @@ export const createQuestion = async (req, res, next) => {
     res.status(201).json({
         success : true,
         message: "Question Created Successfully",
-        data : FINALDATA.rows[0]
+        data : withPublicUrls(FINALDATA.rows[0])
     });
 }
 
@@ -283,7 +304,7 @@ export const deleteQuestion = async (req,res) => {
 }
 
 export const updateQuestion = async (req,res) => {
-    const {description, question_type, tags, choices, images} = req.body; // <-- added images
+    const {description, question_type, tags, choices, images} = req.body;
     const {id} = req.params;
 
     const updates = [];
@@ -433,7 +454,7 @@ export const updateQuestion = async (req,res) => {
                     x++;
                     await client.query(
                         `INSERT INTO choice(question_id, choice_number, status, description, image_path) VALUES ($1, $2, $3, $4, $5)`,
-                        [id, x, choice.status, choice.description, choice.image_path || null] // <-- added image_path
+                        [id, x, choice.status, choice.description, choice.image_path || null]
                     )
                 }
             }
@@ -479,6 +500,6 @@ export const updateQuestion = async (req,res) => {
     res.status(200).json({
         success : true,
         message: "Question Updated Successfully",
-        data : transactionResult.rows[0]
+        data : withPublicUrls(transactionResult.rows[0])
     });
 }

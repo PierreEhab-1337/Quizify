@@ -1,5 +1,12 @@
 import db from '../config/db.js'
 import {QUESTION_STATUS} from '../constants.js'
+import { supabaseAdmin } from '../config/supabase.js'
+
+// يحول storage path لرابط عام قابل للعرض فى <img>
+function toPublicUrl(path) {
+    if (!path) return null;
+    return supabaseAdmin.storage.from("question-images").getPublicUrl(path).data.publicUrl;
+}
 
 export const getAllContestsForAdmin = async (req, res) => {
     const result = await db.query(
@@ -247,10 +254,20 @@ export const getQuestionsOfContest = async (req, res) => {
             message : "No Questions Added Yet!",
         });
 
+    // حوّل كل الـ storage paths لروابط عامة قابلة للعرض
+    const data = result.rows.map(q => ({
+        ...q,
+        images: (q.images || []).map(toPublicUrl),
+        choices: (q.choices || []).map(c => ({
+            ...c,
+            image_path: toPublicUrl(c.image_path),
+        })),
+    }));
+
     res.status(200).json({
         success : true,
         message : "Questions Retrieved from Contest Successfully",
-        data: result.rows
+        data
     });
 }
 
@@ -295,10 +312,22 @@ export const getSingleQuestionOfContest = async (req, res) => {
             message: "Question Not Found in this Contest!"
         });
 
+    const q = result.rows[0];
+
+    // حوّل كل الـ storage paths لروابط عامة قابلة للعرض
+    const data = {
+        ...q,
+        images: (q.images || []).map(toPublicUrl),
+        choices: (q.choices || []).map(c => ({
+            ...c,
+            image_path: toPublicUrl(c.image_path),
+        })),
+    };
+
     res.status(200).json({
         success: true,
         message: "Question Retrieved Successfully",
-        data: result.rows[0]
+        data
     });
 };
 
