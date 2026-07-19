@@ -5,7 +5,7 @@ import { supabaseAdmin } from '../config/supabase.js'
 // يحول storage path لرابط عام قابل للعرض فى <img>
 function toPublicUrl(path) {
     if (!path) return null;
-    return supabaseAdmin.storage.from("question-images").getPublicUrl(path).data.publicUrl;
+    return supabaseAdmin.storage.from("Image").getPublicUrl(path).data.publicUrl;
 }
 
 export const getAllContestsForAdmin = async (req, res) => {
