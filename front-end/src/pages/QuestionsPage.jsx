@@ -112,21 +112,28 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
     let payloadChoices = [];
     if (hasChoices) {
       payloadChoices = choices
-        .filter((c) => c.description.trim())
+        .filter((c) => c.description.trim() || c.imageFile || c.image_path)
         .map((c) => ({
-          description: c.description.trim(),
+          description: c.description.trim() || null,
           status: c.status,
-          imageFile: c.imageFile,       // new file to upload, if any
-          image_path: c.image_path,     // existing path to keep, if any
+          imageFile: c.imageFile,
+          image_path: c.image_path,
         }));
-      if (payloadChoices.length < 2) return setError("أدخل اختيارين على الأقل");
+
+      if (payloadChoices.length < 2)
+        return setError("أدخل اختيارين على الأقل");
+
       const correctCount = payloadChoices.filter((c) => c.status).length;
-      if (correctCount === 0) return setError("حدد إجابة صحيحة واحدة على الأقل");
-      if (type === "singleChoice" && correctCount > 1) return setError("اختيار واحد يسمح بإجابة صحيحة واحدة فقط");
+
+      if (correctCount === 0)
+        return setError("حدد إجابة صحيحة واحدة على الأقل");
+
+      if (type === "singleChoice" && correctCount > 1)
+        return setError("اختيار واحد يسمح بإجابة صحيحة واحدة فقط");
     }
 
     onSave({
-      description: description.trim(),
+      description: description.trim() || null,
       question_type: type,
       tags,
       choices: payloadChoices,
