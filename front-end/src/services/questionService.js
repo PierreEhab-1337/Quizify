@@ -1,4 +1,5 @@
 import api from "./api";
+import { supabase } from "../config/supabase";
 
 // يرجّع الأسئلة، مع فلاتر اختيارية: category, question_type, search
 export async function getQuestions(filters = {}) {
@@ -38,3 +39,20 @@ export async function deleteQuestion(id) {
   return data.data;
 }
 
+export async function uploadImage(questionId, key, file) {
+  const ext = file.name.split(".").pop(); // e.g. "jpg", "png"
+
+  const { data } = await api.post("/question/upload-url", {
+    question_id: questionId,
+    key,
+    ext, // <-- pass it along
+  });
+  const { path, token } = data.data;
+
+  const { error } = await supabase.storage
+    .from("Image")
+    .uploadToSignedUrl(path, token, file);
+
+  if (error) throw error;
+  return path;
+}

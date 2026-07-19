@@ -4,6 +4,7 @@ import {
   createQuestion,
   updateQuestion,
   deleteQuestion,
+  uploadQuestionImage,
 } from "../services/questionService";
 import { getCategories } from "../services/categoryService";
 
@@ -23,7 +24,7 @@ const TYPE_COLOR = {
 };
 
 const OPTION_LETTERS = ["أ", "ب", "ج", "د"];
-const EMPTY_CHOICE = () => ({ description: "", status: false });
+const EMPTY_CHOICE = () => ({ description: "", status: false, imageFile: null, image_path: null });
 
 // ════════════════════════════════════════════════════════════
 // Modal إضافة / تعديل
@@ -34,10 +35,18 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
   const [tags, setTags] = useState(() => (initial?.tags || []).map((t) => t.category_type || t));
   const [choices, setChoices] = useState(() => {
     if (initial?.choices?.length) {
-      return initial.choices.map((c) => ({ description: c.description, status: !!c.status }));
+      return initial.choices.map((c) => ({
+        description: c.description,
+        status: !!c.status,
+        imageFile: null,
+        image_path: c.image_path || null,
+      }));
     }
     return [EMPTY_CHOICE(), EMPTY_CHOICE()];
   });
+  const [questionImages, setQuestionImages] = useState(() =>
+    (initial?.images || []).map((url) => ({ file: null, preview: url, existing: true }))
+  );
   const [error, setError] = useState("");
 
   const hasChoices = type !== "openEnded";
@@ -60,6 +69,21 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
     );
   };
 
+  const setChoiceImage = (i, file) => {
+    setChoices((prev) =>
+      prev.map((c, idx) => (idx === i ? { ...c, imageFile: file } : c))
+    );
+  };
+
+  const addQuestionImage = (file) => {
+    if (!file) return;
+    setQuestionImages((prev) => [...prev, { file, preview: URL.createObjectURL(file), existing: false }]);
+  };
+
+  const removeQuestionImage = (i) => {
+    setQuestionImages((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
   const addChoice = () => {
     if (choices.length >= 6) return;
     setChoices((prev) => [...prev, EMPTY_CHOICE()]);
@@ -78,8 +102,13 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
     let payloadChoices = [];
     if (hasChoices) {
       payloadChoices = choices
-        .map((c) => ({ description: c.description.trim(), status: c.status }))
-        .filter((c) => c.description);
+        .filter((c) => c.description.trim())
+        .map((c) => ({
+          description: c.description.trim(),
+          status: c.status,
+          imageFile: c.imageFile,       // new file to upload, if any
+          image_path: c.image_path,     // existing path to keep, if any
+        }));
       if (payloadChoices.length < 2) return setError("أدخل اختيارين على الأقل");
       const correctCount = payloadChoices.filter((c) => c.status).length;
       if (correctCount === 0) return setError("حدد إجابة صحيحة واحدة على الأقل");
@@ -91,6 +120,7 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
       question_type: type,
       tags,
       choices: payloadChoices,
+      questionImages, // { file, preview, existing }[]
     });
   };
 
@@ -167,6 +197,28 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
             )}
           </div>
 
+          {/* صور السؤال */}
+          <div style={S.fieldGroup}>
+            <label style={S.label}>صور السؤال <span style={S.muted}>(اختياري)</span></label>
+            <div style={S.imageGrid}>
+              {questionImages.map((img, i) => (
+                <div key={i} style={S.imageThumbWrap}>
+                  <img src={img.preview} alt="" style={S.imageThumb} />
+                  <button type="button" style={S.removeImageBtn} onClick={() => removeQuestionImage(i)}>✕</button>
+                </div>
+              ))}
+              <label style={S.imageUploadBtn}>
+                +
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => { addQuestionImage(e.target.files[0]); e.target.value = ""; }}
+                />
+              </label>
+            </div>
+          </div>
+
           {/* الاختيارات */}
           {hasChoices && (
             <div style={S.fieldGroup}>
@@ -200,6 +252,15 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
                       placeholder={`الاختيار ${OPTION_LETTERS[i] || i + 1}`}
                       style={S.input}
                     />
+                    <label style={S.choiceImageBtn} title="صورة الاختيار">
+                      {c.imageFile ? "✓" : c.image_path ? "🖼" : "+"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={(e) => setChoiceImage(i, e.target.files[0])}
+                      />
+                    </label>
                     {choices.length > 2 && (
                       <button type="button" style={S.removeOptBtn} onClick={() => removeChoice(i)}>✕</button>
                     )}
@@ -289,6 +350,14 @@ function QuestionCard({ q, onEdit, onDelete }) {
       </div>
 
       <p style={S.cardText}>{q.description}</p>
+
+      {q.images?.length > 0 && (
+        <div style={S.imageGrid}>
+          {q.images.map((url, i) => (
+            <img key={i} src={url} alt="" style={S.imageThumb} />
+          ))}
+        </div>
+      )}
 
       {q.choices?.length > 0 && (
         <div style={S.cardOptions}>
@@ -382,7 +451,27 @@ export default function QuestionsPage() {
     setSaving(true);
     setError("");
     try {
-      await createQuestion(payload);
+      const tempId = crypto.randomUUID();
+
+      // ارفع صور السؤال (لو موجودة) على Supabase الأول، وبعدين ابعت الـ paths
+      const images = await Promise.all(
+        payload.questionImages
+          .filter((img) => img.file) // بس الصور الجديدة
+          .map((img, i) => uploadQuestionImage(tempId, `q-image-${i}`, img.file))
+      );
+
+      // نفس الفكرة لصور الاختيارات
+      const choices = await Promise.all(
+        payload.choices.map(async (c, i) => ({
+          description: c.description,
+          status: c.status,
+          image_path: c.imageFile
+            ? await uploadQuestionImage(tempId, `choice-${i + 1}`, c.imageFile)
+            : c.image_path || null,
+        }))
+      );
+
+      await createQuestion({ ...payload, images, choices });
       setModal(null);
       await loadQuestions();
     } catch (err) {
@@ -396,7 +485,26 @@ export default function QuestionsPage() {
     setSaving(true);
     setError("");
     try {
-      await updateQuestion(modal.q.question_id, payload);
+      const questionId = modal.q.question_id;
+
+      // حافظ على صور السؤال الموجودة، وارفع بس الجديدة
+      const images = await Promise.all(
+        payload.questionImages.map((img, i) =>
+          img.file ? uploadQuestionImage(questionId, `q-image-${i}`, img.file) : img.preview
+        )
+      );
+
+      const choices = await Promise.all(
+        payload.choices.map(async (c, i) => ({
+          description: c.description,
+          status: c.status,
+          image_path: c.imageFile
+            ? await uploadQuestionImage(questionId, `choice-${i + 1}`, c.imageFile)
+            : c.image_path || null,
+        }))
+      );
+
+      await updateQuestion(questionId, { ...payload, images, choices });
       setModal(null);
       await loadQuestions();
     } catch (err) {
@@ -997,6 +1105,67 @@ const S = {
     fontSize: "14px",
     fontWeight: 800,
     fontFamily: "'Cairo', sans-serif",
+    cursor: "pointer",
+  },
+
+  // ── صور ──
+  imageGrid: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  imageThumbWrap: {
+    position: "relative",
+    width: "64px",
+    height: "64px",
+  },
+  imageThumb: {
+    width: "64px",
+    height: "64px",
+    objectFit: "cover",
+    borderRadius: "8px",
+    border: "1.5px solid #2E5FA8",
+  },
+  removeImageBtn: {
+    position: "absolute",
+    top: "-6px",
+    left: "-6px",
+    width: "18px",
+    height: "18px",
+    borderRadius: "50%",
+    background: "#D24646",
+    color: "#fff",
+    border: "none",
+    fontSize: "10px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+  },
+  imageUploadBtn: {
+    width: "64px",
+    height: "64px",
+    borderRadius: "8px",
+    border: "1.5px dashed #2E5FA8",
+    color: "#6A90B8",
+    fontSize: "22px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+  },
+  choiceImageBtn: {
+    width: "30px",
+    height: "30px",
+    minWidth: "30px",
+    borderRadius: "6px",
+    border: "1.5px solid #2E5FA8",
+    color: "#A8C4E8",
+    fontSize: "13px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     cursor: "pointer",
   },
 };

@@ -122,7 +122,7 @@ export const getQuestion = async (req,res) => {
 }
 
 export const createQuestion = async (req, res, next) => {
-    const {description, question_type, tags, choices} = req.body;
+    const {description, question_type, tags, choices, images} = req.body; // <-- added images
     const user_id = req.user.userId;
     if(description === undefined || question_type === undefined || !description.trim() || choices === undefined)
         return res.status(400).json({
@@ -197,13 +197,23 @@ export const createQuestion = async (req, res, next) => {
             }
         }
 
+        // NEW: insert question-level images (paths already uploaded to Supabase beforehand)
+        if(images !== undefined){
+            for (const image_path of images){
+                await client.query(
+                    `INSERT INTO question_image(question_id, image_path) VALUES ($1, $2)`,
+                    [question_id, image_path]
+                )
+            }
+        }
+
         if(question_type !== "openEnded"){
             let x = 0;
             for (const choice of choices){
                 x++;
                 await client.query(
-                    `INSERT INTO choice(question_id, choice_number, status, description) VALUES ($1, $2, $3, $4)`,
-                    [question_id, x, choice.status, choice.description]
+                    `INSERT INTO choice(question_id, choice_number, status, description, image_path) VALUES ($1, $2, $3, $4, $5)`,
+                    [question_id, x, choice.status, choice.description, choice.image_path || null] // <-- added image_path
                 )
             }
         }
@@ -273,14 +283,14 @@ export const deleteQuestion = async (req,res) => {
 }
 
 export const updateQuestion = async (req,res) => {
-    const {description, question_type, tags, choices} = req.body;
+    const {description, question_type, tags, choices, images} = req.body; // <-- added images
     const {id} = req.params;
 
     const updates = [];
     const values = [];
 
 
-    if(description === undefined && question_type === undefined && tags === undefined && choices === undefined)
+    if(description === undefined && question_type === undefined && tags === undefined && choices === undefined && images === undefined)
         return res.status(400).json({
                 success:false,
                 message: "Fill missing fields"
@@ -358,6 +368,14 @@ export const updateQuestion = async (req,res) => {
         })
     }
 
+    if(images !== undefined){
+        if(!Array.isArray(images))
+            return res.status(400).json({
+                success:false,
+                message: "images must be an array"
+        })
+    }
+
     const transactionResult = await db.withTransaction(async (client) => {
         if(description!== undefined || question_type !== undefined){
             values.push(id);
@@ -394,6 +412,18 @@ export const updateQuestion = async (req,res) => {
             }
         }
 
+        // NEW: images sent = full replacement of question-level images
+        if(images !== undefined){
+            await client.query(`DELETE FROM question_image WHERE question_id = $1`, [id]);
+
+            for (const image_path of images){
+                await client.query(
+                    `INSERT INTO question_image(question_id, image_path) VALUES ($1, $2)`,
+                    [id, image_path]
+                )
+            }
+        }
+
         if(choices !== undefined){
             await client.query(`DELETE FROM choice WHERE question_id = $1`, [id]);
 
@@ -402,8 +432,8 @@ export const updateQuestion = async (req,res) => {
                 for (const choice of choices){
                     x++;
                     await client.query(
-                        `INSERT INTO choice(question_id, choice_number, status, description) VALUES ($1, $2, $3, $4)`,
-                        [id, x, choice.status, choice.description]
+                        `INSERT INTO choice(question_id, choice_number, status, description, image_path) VALUES ($1, $2, $3, $4, $5)`,
+                        [id, x, choice.status, choice.description, choice.image_path || null] // <-- added image_path
                     )
                 }
             }
