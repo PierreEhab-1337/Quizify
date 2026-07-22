@@ -114,7 +114,7 @@ function QuestionModal({ mode, initial, categories, onSave, onClose, saving }) {
       payloadChoices = choices
         .filter((c) => c.description.trim() || c.imageFile || c.image_path)
         .map((c) => ({
-          description: c.description.trim() || null,
+          description: c.description.trim() || "",
           status: c.status,
           imageFile: c.imageFile,
           image_path: c.image_path,
