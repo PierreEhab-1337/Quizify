@@ -14,12 +14,13 @@ function AddUserModal({ onSave, onClose, saving }) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
 
   const handleSave = () => {
     setError("");
-    if (!username.trim() || !email.trim() || !password.trim()) {
+    if (!username.trim() || !email.trim() || !password.trim() || !role.trim()) {
       setError("كل الحقول مطلوبة");
       return;
     }
@@ -27,7 +28,7 @@ function AddUserModal({ onSave, onClose, saving }) {
       setError("كلمة المرور لازم تكون 8 حروف على الأقل");
       return;
     }
-    onSave({ username: username.trim(), email: email.trim(), password });
+    onSave({ username: username.trim(), email: email.trim(), password, role });
   };
 
   return (
@@ -80,10 +81,30 @@ function AddUserModal({ onSave, onClose, saving }) {
               </button>
             </div>
           </div>
-
-          <div style={S.infoBox}>
-            الحساب الجديد هيتعمل بصلاحية "مستخدم" دايماً. لو محتاج ترفع صلاحيته لمشرف أو مدير، ده حالياً محتاج تدخّل مباشر على قاعدة البيانات.
+          <div style={{...S.fieldGroup, position:"relative"}}>
+            <label for="role" style={S.label}>الصلاحية <span style={S.required}>*</span></label>
+            <select style={S.dropdown} value={role} onChange={(e) => setRole(e.target.value)} name="role" id="role">
+              <option value="">اختار الصلاحية</option>
+              <option value="user">مستخدم</option>
+              <option value="moderator">مشرف</option>
+              <option value="admin">مدير</option>
+            </select>
+            <span
+              style={{
+                position: "absolute",
+                left: "20px",
+                top: "66%",
+                transform: "translateY(-50%)",
+                pointerEvents: "none",
+                color: "#fff",
+                fontSize: "12px",
+              }}
+            >
+              ▼
+            </span>
           </div>
+
+
         </div>
 
         <div style={S.modalFooter}>
@@ -103,15 +124,16 @@ function AddUserModal({ onSave, onClose, saving }) {
 function EditUserModal({ user, onSave, onClose, saving }) {
   const [username, setUsername] = useState(user.username || "");
   const [email, setEmail] = useState(user.email || "");
+  const [password, setPassword] = useState(user.password_hash || "");
   const [error, setError] = useState("");
 
   const handleSave = () => {
     setError("");
-    if (!username.trim() || !email.trim()) {
+    if (!username.trim() || !email.trim() || !password.trim()) {
       setError("اسم المستخدم والبريد الإلكتروني مطلوبين");
       return;
     }
-    onSave({ username: username.trim(), email: email.trim() });
+    onSave({ username: username.trim(), email: email.trim(), password_hash: password.trim() });
   };
 
   return (
@@ -144,6 +166,23 @@ function EditUserModal({ user, onSave, onClose, saving }) {
               onChange={(e) => setEmail(e.target.value)}
               style={S.input}
             />
+          </div>
+
+          <div style={S.fieldGroup}>
+            <label style={S.label}>كلمة المرور <span style={S.required}>*</span></label>
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPass ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                placeholder="8 أحرف على الأقل"
+                style={{ ...S.input, paddingLeft: "56px" }}
+              />
+              <button style={S.eyeBtn} onClick={() => setShowPass((p) => !p)} tabIndex={-1}>
+                {showPass ? "إخفاء" : "إظهار"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -234,6 +273,7 @@ function UserCard({ user, disableDelete, disableDeleteReason, onEdit, onDelete }
           }}>
             {ROLE_LABELS[user.role] || user.role}
           </div>
+          {user.role === "admin" ? (<div style={S.cardUsername}>{user.password_hash}</div>):(<></>)}
         </div>
       </div>
 
@@ -794,5 +834,20 @@ const S = {
     background: "rgba(210,70,70,.12)",
     border: "1.5px solid rgba(210,70,70,.4)",
     flexShrink: 0,
+  },
+  dropdown: {
+    width: "100%",
+    height: "48px",
+    padding: "0 16px",
+    border: "2px solid #2f66c9",
+    borderRadius: "12px",
+    background: "#162b57",
+    color: "#fff",
+    fontSize: "16px",
+    outline: "none",
+    cursor: "pointer",
+    appearance: "none",
+    WebkitAppearance: "none",
+    MozAppearance: "none",
   },
 };

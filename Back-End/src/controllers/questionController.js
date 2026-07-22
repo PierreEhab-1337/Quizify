@@ -440,7 +440,7 @@ export const updateQuestion = async (req,res) => {
             for (const image_path of images){
                 await client.query(
                     `INSERT INTO question_image(question_id, image_path) VALUES ($1, $2)`,
-                    [id, image_path]
+                    [id, toRelativePath(image_path)]
                 )
             }
         }
@@ -454,7 +454,7 @@ export const updateQuestion = async (req,res) => {
                     x++;
                     await client.query(
                         `INSERT INTO choice(question_id, choice_number, status, description, image_path) VALUES ($1, $2, $3, $4, $5)`,
-                        [id, x, choice.status, choice.description, choice.image_path || null]
+                        [id, x, choice.status, choice.description, toRelativePath(choice.image_path) || null]
                     )
                 }
             }
@@ -496,7 +496,13 @@ export const updateQuestion = async (req,res) => {
         return finalResult
     })
 
-    
+    function toRelativePath(pathOrUrl) {
+        if (!pathOrUrl) return null;
+        const marker = "/object/public/Image/";
+        const idx = pathOrUrl.indexOf(marker);
+        return idx === -1 ? pathOrUrl : pathOrUrl.slice(idx + marker.length);
+    }
+
     res.status(200).json({
         success : true,
         message: "Question Updated Successfully",
